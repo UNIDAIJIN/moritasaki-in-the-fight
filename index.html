@@ -188,7 +188,7 @@
 <div id="message"></div>
 <div id="combo-p1"></div>
 <div id="combo-p2"></div>
-<div id="version-label">v0.2.2</div>
+<div id="version-label">v0.2.3</div>
 
 <div id="controls-guide">
   P1: [A/D] 移動 &nbsp; [W] ジャンプ &nbsp; [S] ガード &nbsp; [Q] パンチ &nbsp; [E] キック
@@ -222,11 +222,16 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
+const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m') || window.innerWidth <= 720;
+
 // ─── RENDERER ─────────────────────────────────────────────────
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({
+  antialias: !MOBILE_RENDER_MODE,
+  powerPreference: 'high-performance',
+});
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
+renderer.setPixelRatio(MOBILE_RENDER_MODE ? 1 : Math.min(window.devicePixelRatio, 1.5));
+renderer.shadowMap.enabled = !MOBILE_RENDER_MODE;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
@@ -242,8 +247,8 @@ camera.position.set(0, 2.5, 11);
 
 scene.add(new THREE.AmbientLight(0xc0d0e0, 2.5));
 const sun = new THREE.DirectionalLight(0xffd0a0, 2.5);
-sun.position.set(6, 12, 4); sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.position.set(6, 12, 4); sun.castShadow = !MOBILE_RENDER_MODE;
+sun.shadow.mapSize.set(MOBILE_RENDER_MODE ? 512 : 1024, MOBILE_RENDER_MODE ? 512 : 1024);
 sun.shadow.camera.left = -12; sun.shadow.camera.right = 12;
 sun.shadow.camera.top = 12;  sun.shadow.camera.bottom = -4;
 scene.add(sun);
@@ -252,7 +257,7 @@ const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(22, 12),
   new THREE.MeshStandardMaterial({ color: 0x8090a0, roughness: 0.95 })
 );
-floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = !MOBILE_RENDER_MODE; scene.add(floor);
 const grid = new THREE.GridHelper(20, 20, 0x1a2444, 0x0e1533);
 grid.position.y = 0.005; scene.add(grid);
 for (let i = -3; i <= 3; i++) {
@@ -260,7 +265,7 @@ for (let i = -3; i <= 3; i++) {
     new THREE.CylinderGeometry(0.12, 0.18, 9, 6),
     new THREE.MeshStandardMaterial({ color: 0x1e2a3a, roughness: 0.9 })
   );
-  p.position.set(i * 3.2, 4.5, -7); p.castShadow = true; scene.add(p);
+  p.position.set(i * 3.2, 4.5, -7); p.castShadow = !MOBILE_RENDER_MODE; scene.add(p);
 }
 
 const blueRim = new THREE.PointLight(0x2244ff, 4, 20);
@@ -275,7 +280,7 @@ const BASE_MOVE_SPEED = 4.5, BASE_JUMP_FORCE = 9, GRAVITY = -22;
 const CHAR_H = 1.8, CHAR_W = 0.5, MIN_DIST = 0.36;
 const FIXED_DT = 1 / 60;
 const MODEL_ROT_OFFSET = 0;
-const ASSET_VERSION = 'v0.2.2';
+const ASSET_VERSION = 'v0.2.3';
 
 const MOVE_DEFS = {
   light: {
@@ -582,6 +587,13 @@ class Player {
     // ローカルZ軸がワールドX軸になる（回転PI/2のため）
     this.modelZCenter = (box2.min.z + box2.max.z) / 2;
     this.modelHalfW   = this.stats.width;
+    fbx.traverse(c => {
+      if (c.isMesh) {
+        c.castShadow = !MOBILE_RENDER_MODE;
+        c.receiveShadow = !MOBILE_RENDER_MODE;
+        c.frustumCulled = false;
+      }
+    });
 
     // テクスチャを手動適用。ロード完了は loadCharacters() 側で待つ。
     if (charDef.texDir) {
@@ -592,15 +604,10 @@ class Player {
       let meshIdx = 0;
       fbx.traverse(c => {
         if (c.isMesh) {
-          c.castShadow = true; c.receiveShadow = true; c.frustumCulled = false;
           const tIdx = texMap ? (texMap[meshIdx] ?? 0) : meshIdx % texObjs.length;
           c.material = new THREE.MeshStandardMaterial({ map: texObjs[tIdx], roughness: 1.0, metalness: 0.0 });
           meshIdx++;
         }
-      });
-    } else {
-      fbx.traverse(c => {
-        if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; c.frustumCulled = false; }
       });
     }
 
