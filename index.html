@@ -274,20 +274,89 @@ redRim.position.set(7, 6, 2); scene.add(redRim);
 
 // ─── CONSTANTS ────────────────────────────────────────────────
 const GROUND_Y = 0, STAGE_MIN = -7, STAGE_MAX = 7;
-const MOVE_SPEED = 4.5, JUMP_FORCE = 9, GRAVITY = -22;
-const CHAR_H = 1.8, CHAR_W = 0.5, MIN_DIST = 0.30;
-const PUNCH_DMG = 12, KICK_DMG = 22;
-const PUNCH_RANGE = 1.3, KICK_RANGE = 1.6;
-const PUNCH_DUR = 1.0, KICK_DUR = 1.0;
-const ATK_COOLDOWN = 0.65, HIT_STUN = 0.35;
+const BASE_MOVE_SPEED = 4.5, BASE_JUMP_FORCE = 9, GRAVITY = -22;
+const CHAR_H = 1.8, CHAR_W = 0.5, MIN_DIST = 0.36;
+const FIXED_DT = 1 / 60;
 const MODEL_ROT_OFFSET = 0;
+
+const MOVE_DEFS = {
+  light: {
+    anim: 'punch',
+    damage: 8,
+    chip: 1,
+    startup: 0.10,
+    active: 0.10,
+    recovery: 0.22,
+    hitstun: 0.32,
+    blockstun: 0.16,
+    range: 0.82,
+    heightMin: 0.35,
+    heightMax: 1.45,
+    knockback: 2.8,
+    blockPush: 1.2,
+    selfSlide: 0,
+    cameraShake: 0.10,
+    voice: true,
+  },
+  heavy: {
+    anim: 'kick',
+    damage: 18,
+    chip: 3,
+    startup: 0.22,
+    active: 0.12,
+    recovery: 0.38,
+    hitstun: 0.46,
+    blockstun: 0.24,
+    range: 1.12,
+    heightMin: 0.22,
+    heightMax: 1.62,
+    knockback: 4.8,
+    blockPush: 2.0,
+    selfSlide: 0.35,
+    cameraShake: 0.22,
+    voice: true,
+  },
+};
+
+const DEFAULT_STATS = { hp: 100, speed: 1.00, jump: 1.00, width: 0.34 };
+
+function cloneMove(base, overrides = {}) {
+  return { ...base, ...overrides };
+}
+
+function defaultMoves() {
+  return {
+    light: cloneMove(MOVE_DEFS.light),
+    heavy: cloneMove(MOVE_DEFS.heavy),
+  };
+}
 
 // ─── CHARACTERS ───────────────────────────────────────────────
 const CHARACTERS = [
-  { name: 'RIKU',    path: 'chara_glb/riku.glb',    texDir: 'chara_glb/tex/riku',    texCount: 2, color: '#4af', bg: '#0a1a2e', scale: 1.0,  voice: 'voice/riku_voice.mp3',    deadVoice: 'voice/riku_dead.mp3'    },
-  { name: 'NINO',    path: 'chara_glb/nino.glb',    texDir: 'chara_glb/tex/nino',    texCount: 3, texMap: [1,0,2,2], yAdjust: -0.05, color: '#f84', bg: '#2e1a0a', scale: 1.05, voice: 'voice/nino_voice.mp3',    deadVoice: 'voice/nino_dead.mp3'    },
-  { name: 'MAKI',    path: 'chara_glb/maki.glb',    texDir: 'chara_glb/tex/maki',    texCount: 3, color: '#4f8', bg: '#0a2e1a', scale: 0.95, voice: 'voice/maki_voice.mp3',    deadVoice: 'voice/maki_dead.mp3'    },
-  { name: 'NATSUMI', path: 'chara_glb/natsumi.glb', texDir: 'chara_glb/tex/natsumi', texCount: 2, texMap: [1,0], color: '#f4f', bg: '#2e0a2e', scale: 0.95, voice: 'voice/natsumi_voice.mp3', deadVoice: 'voice/natsumi_dead.mp3' },
+  {
+    name: 'RIKU', path: 'chara_glb/riku.glb', texDir: 'chara_glb/tex/riku', texCount: 2,
+    color: '#4af', bg: '#0a1a2e', scale: 1.0, voice: 'voice/riku_voice.mp3', deadVoice: 'voice/riku_dead.mp3',
+    stats: DEFAULT_STATS,
+    moves: defaultMoves(),
+  },
+  {
+    name: 'NINO', path: 'chara_glb/nino.glb', texDir: 'chara_glb/tex/nino', texCount: 3, texMap: [1,0,2,2], yAdjust: -0.05,
+    color: '#f84', bg: '#2e1a0a', scale: 1.05, voice: 'voice/nino_voice.mp3', deadVoice: 'voice/nino_dead.mp3',
+    stats: DEFAULT_STATS,
+    moves: defaultMoves(),
+  },
+  {
+    name: 'MAKI', path: 'chara_glb/maki.glb', texDir: 'chara_glb/tex/maki', texCount: 3,
+    color: '#4f8', bg: '#0a2e1a', scale: 0.95, voice: 'voice/maki_voice.mp3', deadVoice: 'voice/maki_dead.mp3',
+    stats: DEFAULT_STATS,
+    moves: defaultMoves(),
+  },
+  {
+    name: 'NATSUMI', path: 'chara_glb/natsumi.glb', texDir: 'chara_glb/tex/natsumi', texCount: 2, texMap: [1,0],
+    color: '#f4f', bg: '#2e0a2e', scale: 0.95, voice: 'voice/natsumi_voice.mp3', deadVoice: 'voice/natsumi_dead.mp3',
+    stats: DEFAULT_STATS,
+    moves: defaultMoves(),
+  },
 ];
 
 // ─── INPUT ────────────────────────────────────────────────────
@@ -463,7 +532,10 @@ setupMobileController();
 class Player {
   constructor(id) {
     this.id = id;
-    this.hp = 100;
+    this.charDef = null;
+    this.stats = { hp: 100, speed: 1, jump: 1, width: 0.34 };
+    this.maxHp = 100;
+    this.hp = this.maxHp;
     this.x = id === 1 ? -3 : 3;
     this.y = GROUND_Y;
     this.vx = 0; this.vy = 0;
@@ -471,10 +543,11 @@ class Player {
     this.facingDir = id === 1 ? 1 : -1;
     this.state = 'idle';
     this.stateTime = 0;
-    this.atkPhase = 0; this.atkType = null; this.hasHit = false;
-    this.atkCooldown = 0; this.hitStunTimer = 0; this.hitFlashTimer = 0; this.guardSETimer = 0;
+    this.atkPhase = 0; this.atkType = null; this.activeMove = null; this.hasHit = false;
+    this.hitStunTimer = 0; this.hitFlashTimer = 0; this.guardSETimer = 0; this.blockStunTimer = 0;
     this.combo = 0; this.comboTimer = 0;
     this.deathSpin = 0;
+    this.prevPunch = false; this.prevKick = false;
     this.charScale = 1.0;
     this.modelYOffset = 0;
     this.modelZCenter = 0;   // ローカルZ中心 → ワールドXオフセットになる
@@ -493,6 +566,10 @@ class Player {
   }
 
   setupModel(fbx, animClips, charDef) {
+    this.charDef = charDef;
+    this.stats = { hp: 100, speed: 1, jump: 1, width: 0.34, ...(charDef.stats || {}) };
+    this.maxHp = this.stats.hp;
+    this.hp = this.maxHp;
     this.charScale = charDef.scale;
     // GLBのスキンメッシュはmatrixWorld更新が必要
     fbx.updateMatrixWorld(true);
@@ -506,7 +583,7 @@ class Player {
     this.modelYOffset = -box2.min.y + (charDef.yAdjust || 0);
     // ローカルZ軸がワールドX軸になる（回転PI/2のため）
     this.modelZCenter = (box2.min.z + box2.max.z) / 2;
-    this.modelHalfW   = (box2.max.z - box2.min.z) / 2;
+    this.modelHalfW   = this.stats.width;
 
     // テクスチャを手動ロードしてマテリアルに適用
     if (charDef.texDir) {
@@ -559,6 +636,7 @@ class Player {
       this.anims[name] = action;
     }
     this.playAnim('idle', 0);
+    this.updateHPBar();
   }
 
   playVoice() {
@@ -602,61 +680,105 @@ class Player {
     };
   }
 
-  // 攻撃ボックス（自分の前方に広めに展開）
-  getAttackTip() {
-    if (!this.atkType || this.hasHit) return null;
-    const [hitStart, hitEnd] = this.atkType === 'punch' ? [0.40, 0.85] : [0.45, 0.90];
-    if (this.atkPhase < hitStart || this.atkPhase > hitEnd) return null;
+  getMove(type) {
+    return this.charDef?.moves?.[type] || MOVE_DEFS[type];
+  }
 
-    const range = this.atkType === 'punch' ? 0.55 : 0.75;
+  startAttack(type) {
+    const move = this.getMove(type);
+    if (!move) return;
+    this.state = type === 'heavy' ? 'kick' : 'punch';
+    this.stateTime = move.startup + move.active + move.recovery;
+    this.atkType = type;
+    this.activeMove = move;
+    this.atkPhase = 0;
+    this.hasHit = false;
+    if (this.grounded) this.vx = this.facingDir * (move.selfSlide || 0);
+    if (move.voice) this.playVoice();
+  }
+
+  // 攻撃ボックス（発生後の持続中だけ出る）
+  getAttackTip() {
+    if (!this.atkType || !this.activeMove || this.hasHit) return null;
+    const move = this.activeMove;
+    const elapsed = move.startup + move.active + move.recovery - this.stateTime;
+    if (elapsed < move.startup || elapsed > move.startup + move.active) return null;
+
     const xCenter = this.x + this.modelZCenter * this.facingDir;
-    // 視覚上の中心から前方にrange分のボックス
+    const backReach = 0.18;
     const front = this.facingDir > 0
-      ? { minX: xCenter - 0.3, maxX: xCenter + range }
-      : { minX: xCenter - range, maxX: xCenter + 0.3 };
+      ? { minX: xCenter - backReach, maxX: xCenter + move.range }
+      : { minX: xCenter - move.range, maxX: xCenter + backReach };
 
     return {
+      move,
       minX: front.minX,
       maxX: front.maxX,
-      minY: this.y + 0.1,
-      maxY: this.y + CHAR_H * 0.95,
+      minY: this.y + move.heightMin,
+      maxY: this.y + move.heightMax,
     };
   }
 
-  takeDamage(dmg, fromDir) {
-    if (this.state === 'dead') return false;
-    if (this.hitStunTimer > 0) return false;
-    if (this.state === 'block' && this.facingDir !== fromDir) { if (this.guardSETimer <= 0) { playSE('se_hit.mp3'); this.guardSETimer = 0.4; } return false; }
-    this.hp = Math.max(0, this.hp - dmg);
-    this.hitStunTimer = HIT_STUN; this.state = 'hitstun'; this.stateTime = HIT_STUN;
+  isGuardingAgainst(fromDir) {
+    return this.grounded && this.state === 'block' && this.facingDir !== fromDir;
+  }
+
+  receiveAttack(move, fromDir) {
+    if (this.state === 'dead') return 'none';
+    if (this.hitStunTimer > 0 || this.blockStunTimer > 0) return 'none';
+
+    if (this.isGuardingAgainst(fromDir)) {
+      this.hp = Math.max(0, this.hp - (move.chip || 0));
+      this.blockStunTimer = move.blockstun;
+      this.state = 'blockstun';
+      this.stateTime = move.blockstun;
+      this.vx = fromDir * (move.blockPush || 1);
+      this.guardSETimer = 0.18;
+      this.hitFlashTimer = 0.06;
+      playSE('se_hit.mp3');
+      this.updateHPBar();
+      if (this.hp <= 0) this.die(fromDir);
+      return 'blocked';
+    }
+
+    this.hp = Math.max(0, this.hp - move.damage);
+    this.hitStunTimer = move.hitstun;
+    this.state = 'hitstun';
+    this.stateTime = move.hitstun;
+    this.vx = fromDir * move.knockback;
     this.hitFlashTimer = 0.12;
     playSE('se_hit.mp3');
-    if (this.hp <= 0) {
-      this.state = 'dead'; this.stateTime = 9999;
-      this.vx = -fromDir * 20; this.vy = 22; this.deathSpin = fromDir * 15;
-      if (this.deadVoiceAudio) { this.deadVoiceAudio.currentTime = 0; this.deadVoiceAudio.play().catch(() => {}); }
-    }
+    if (this.hp <= 0) this.die(fromDir);
     this.updateHPBar();
-    return true;
+    return 'hit';
+  }
+
+  die(fromDir) {
+    this.state = 'dead'; this.stateTime = 9999;
+    this.vx = fromDir * 14; this.vy = 15; this.deathSpin = fromDir * 15;
+    if (this.deadVoiceAudio) { this.deadVoiceAudio.currentTime = 0; this.deadVoiceAudio.play().catch(() => {}); }
   }
 
   updateHPBar() {
     const el = document.getElementById(this.id === 1 ? 'p1-hp' : 'p2-hp');
-    el.style.width = (this.hp) + '%';
-    el.style.background = this.hp > 50 ? (this.id === 1 ? '#4af' : '#f84') : this.hp > 25 ? '#fc0' : '#f22';
+    const pct = Math.max(0, Math.min(100, this.hp / this.maxHp * 100));
+    el.style.width = pct + '%';
+    el.style.background = pct > 50 ? (this.id === 1 ? '#4af' : '#f84') : pct > 25 ? '#fc0' : '#f22';
   }
 
   update(dt, other) {
     this.stateTime    = Math.max(0, this.stateTime - dt);
-    this.atkCooldown  = Math.max(0, this.atkCooldown - dt);
     this.hitStunTimer = Math.max(0, this.hitStunTimer - dt);
+    this.blockStunTimer = Math.max(0, this.blockStunTimer - dt);
     this.hitFlashTimer = Math.max(0, this.hitFlashTimer - dt);
     this.guardSETimer = Math.max(0, this.guardSETimer - dt);
     this.comboTimer   = Math.max(0, this.comboTimer - dt);
     if (this.comboTimer <= 0 && this.combo > 0) { this.combo = 0; this._updateCombo(); }
 
-    const curAtkDur = this.atkType === 'kick' ? KICK_DUR : PUNCH_DUR;
-    if (this.atkType && this.stateTime > 0) this.atkPhase = 1 - (this.stateTime / curAtkDur);
+    if (this.atkType && this.activeMove) {
+      const dur = this.activeMove.startup + this.activeMove.active + this.activeMove.recovery;
+      this.atkPhase = 1 - (this.stateTime / dur);
+    }
 
     if (this.state === 'dead') {
       this.vy += GRAVITY * dt;
@@ -666,40 +788,49 @@ class Player {
       return;
     }
 
-    if (!['punch','kick','hitstun','dead'].includes(this.state))
+    if (!['punch','kick','hitstun','blockstun','dead'].includes(this.state))
       this.facingDir = other.x >= this.x ? 1 : -1;
 
     const inp = this.getInput();
+    const punchPressed = inp.punch && !this.prevPunch;
+    const kickPressed = inp.kick && !this.prevKick;
     if (this.state === 'hitstun') {
       if (this.stateTime <= 0) this.state = 'idle';
+    } else if (this.state === 'blockstun') {
+      this.vx *= 0.88;
+      if (this.stateTime <= 0) this.state = 'idle';
     } else if (this.state === 'punch' || this.state === 'kick') {
-      if (this.stateTime <= 0) { this.state = 'idle'; this.atkType = null; this.atkPhase = 0; }
+      if (!this.grounded) {
+        if      (inp.left)  this.vx = -BASE_MOVE_SPEED * this.stats.speed * 0.8;
+        else if (inp.right) this.vx =  BASE_MOVE_SPEED * this.stats.speed * 0.8;
+      } else {
+        this.vx *= 0.82;
+      }
+      if (this.stateTime <= 0) {
+        this.state = 'idle'; this.atkType = null; this.activeMove = null; this.atkPhase = 0;
+      }
     } else {
-      if (inp.punch && this.atkCooldown <= 0) {
-        this.state = 'punch'; this.stateTime = PUNCH_DUR; this.atkCooldown = PUNCH_DUR + 0.1;
-        this.atkType = 'punch'; this.atkPhase = 0; this.hasHit = false;
-        if (this.grounded) this.vx = 0;
-        this.combo++; this.comboTimer = 1.5; this._updateCombo();
-        this.playVoice();
-      } else if (inp.kick && this.atkCooldown <= 0) {
-        this.state = 'kick'; this.stateTime = KICK_DUR; this.atkCooldown = KICK_DUR + 0.1;
-        this.atkType = 'kick'; this.atkPhase = 0; this.hasHit = false;
-        if (this.grounded) this.vx = this.facingDir * 0.3;
-        this.combo++; this.comboTimer = 1.5; this._updateCombo();
-        this.playVoice();
+      if (punchPressed) {
+        this.startAttack('light');
+      } else if (kickPressed) {
+        this.startAttack('heavy');
       } else if (inp.block && this.grounded) {
         this.state = 'block'; this.vx = 0;
       } else if (this.grounded) {
-        if      (inp.left)  { this.vx = -MOVE_SPEED; this.state = 'walk'; }
-        else if (inp.right) { this.vx =  MOVE_SPEED; this.state = 'walk'; }
+        const moveSpeed = BASE_MOVE_SPEED * this.stats.speed;
+        if      (inp.left)  { this.vx = -moveSpeed; this.state = 'walk'; }
+        else if (inp.right) { this.vx =  moveSpeed; this.state = 'walk'; }
         else                { this.vx = 0;            this.state = 'idle'; }
-        if (inp.jump) { this.vy = JUMP_FORCE; this.grounded = false; this.state = 'jump'; }
+        if (inp.jump) { this.vy = BASE_JUMP_FORCE * this.stats.jump; this.grounded = false; this.state = 'jump'; }
       } else {
-        if      (inp.left)  this.vx = -MOVE_SPEED;
-        else if (inp.right) this.vx =  MOVE_SPEED;
+        const airSpeed = BASE_MOVE_SPEED * this.stats.speed * 0.85;
+        if      (inp.left)  this.vx = -airSpeed;
+        else if (inp.right) this.vx =  airSpeed;
         this.state = 'jump';
       }
     }
+    this.prevPunch = inp.punch;
+    this.prevKick = inp.kick;
 
     if (!this.grounded) this.vy += GRAVITY * dt;
     this.x += this.vx * dt; this.y += this.vy * dt;
@@ -712,7 +843,7 @@ class Player {
 
     if (this.hitStunTimer > 0) this.playAnim('idle');
     else {
-      const m = { idle:'idle', walk:'walk', jump:'jump', punch:'punch', kick:'kick', block:'block', dead:'idle' };
+      const m = { idle:'idle', walk:'walk', jump:'jump', punch:'punch', kick:'kick', block:'block', blockstun:'block', dead:'idle' };
       this.playAnim(m[this.state] || 'idle');
     }
     this._sync3D();
@@ -727,7 +858,7 @@ class Player {
 
     // ヒット時：後ろに傾く（hitStunTimerが大きいほど傾き大）
     if (this.hitStunTimer > 0 && this.state !== 'dead') {
-      const lean = (this.hitStunTimer / HIT_STUN) * 0.35 * -this.facingDir;
+      const lean = Math.min(1, this.hitStunTimer / 0.35) * 0.35 * -this.facingDir;
       obj.rotation.z = lean;
     } else if (this.state !== 'dead') {
       obj.rotation.z = 0;
@@ -753,10 +884,11 @@ class Player {
 
   reset(startX) {
     this.x = startX; this.y = GROUND_Y; this.vx = 0; this.vy = 0;
-    this.hp = 100; this.state = 'idle'; this.stateTime = 0;
-    this.hitStunTimer = 0; this.hitFlashTimer = 0; this.guardSETimer = 0; this.atkCooldown = 0;
-    this.atkType = null; this.atkPhase = 0; this.hasHit = false;
+    this.hp = this.maxHp; this.state = 'idle'; this.stateTime = 0;
+    this.hitStunTimer = 0; this.blockStunTimer = 0; this.hitFlashTimer = 0; this.guardSETimer = 0;
+    this.atkType = null; this.activeMove = null; this.atkPhase = 0; this.hasHit = false;
     this.grounded = true; this.combo = 0; this.comboTimer = 0; this.deathSpin = 0;
+    this.prevPunch = false; this.prevKick = false;
     if (this.model) this.model.rotation.z = 0;
     this.curAnim = null; this.facingDir = this.id === 1 ? 1 : -1;
     this.updateHPBar(); this._updateCombo(); this.playAnim('idle', 0);
@@ -1057,10 +1189,16 @@ function resolveAttack(atk, def) {
   if (tip.maxX <= body.minX || tip.minX >= body.maxX) return;
   if (tip.maxY <= body.minY || tip.minY >= body.maxY) return;
 
-  const dmg = atk.atkType === 'kick' ? KICK_DMG : PUNCH_DMG;
-  if (def.takeDamage(dmg, atk.facingDir)) {
+  const result = def.receiveAttack(tip.move, atk.facingDir);
+  if (result !== 'none') {
     atk.hasHit = true;
-    cameraShakeAmt = atk.atkType === 'kick' ? 0.28 : 0.14;
+    cameraShakeAmt = result === 'blocked' ? tip.move.cameraShake * 0.45 : tip.move.cameraShake;
+    showDmgNum(result === 'blocked' ? (tip.move.chip || 0) : tip.move.damage, def.x, def.y + CHAR_H * 0.75, atk.id);
+    if (result === 'hit') {
+      atk.combo++;
+      atk.comboTimer = 1.5;
+      atk._updateCombo();
+    }
     if (def.hp <= 0) { clearInterval(timerInterval); setTimeout(() => endRound(atk.id), 500); }
   }
 }
@@ -1106,16 +1244,24 @@ function updateCamera() {
 
 // ─── LOOP ─────────────────────────────────────────────────────
 const clock = new THREE.Clock();
+let accumulator = 0;
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 1 / 30);
+  const frameDt = Math.min(clock.getDelta(), 0.08);
   if (gameState === 'playing') {
-    p1.update(dt, p2); p2.update(dt, p1);
-    separatePlayers();
-    checkCombat();
-  } else if (gameState === 'roundEnd') {
-    if (p1?.mixer) p1.mixer.update(dt);
-    if (p2?.mixer) p2.mixer.update(dt);
+    accumulator = Math.min(accumulator + frameDt, FIXED_DT * 5);
+    while (accumulator >= FIXED_DT) {
+      p1.update(FIXED_DT, p2); p2.update(FIXED_DT, p1);
+      separatePlayers();
+      checkCombat();
+      accumulator -= FIXED_DT;
+    }
+  } else {
+    accumulator = 0;
+    if (gameState === 'roundEnd') {
+      if (p1?.mixer) p1.mixer.update(frameDt);
+      if (p2?.mixer) p2.mixer.update(frameDt);
+    }
   }
   updateCamera();
   renderer.render(scene, camera);
