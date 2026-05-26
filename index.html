@@ -188,7 +188,7 @@
 <div id="message"></div>
 <div id="combo-p1"></div>
 <div id="combo-p2"></div>
-<div id="version-label">v0.2.1</div>
+<div id="version-label">v0.2.2</div>
 
 <div id="controls-guide">
   P1: [A/D] 移動 &nbsp; [W] ジャンプ &nbsp; [S] ガード &nbsp; [Q] パンチ &nbsp; [E] キック
@@ -275,7 +275,7 @@ const BASE_MOVE_SPEED = 4.5, BASE_JUMP_FORCE = 9, GRAVITY = -22;
 const CHAR_H = 1.8, CHAR_W = 0.5, MIN_DIST = 0.36;
 const FIXED_DT = 1 / 60;
 const MODEL_ROT_OFFSET = 0;
-const ASSET_VERSION = 'v0.2.1';
+const ASSET_VERSION = 'v0.2.2';
 
 const MOVE_DEFS = {
   light: {
@@ -583,15 +583,11 @@ class Player {
     this.modelZCenter = (box2.min.z + box2.max.z) / 2;
     this.modelHalfW   = this.stats.width;
 
-    // テクスチャを手動ロードしてマテリアルに適用
+    // テクスチャを手動適用。ロード完了は loadCharacters() 側で待つ。
     if (charDef.texDir) {
-      const texLoader = new THREE.TextureLoader();
       const count = charDef.texCount || 1;
       const texFiles = Array.from({length: count}, (_, i) => i === 0 ? 'Texture.jpg' : `Texture ${i}.jpg`);
-      const texObjs = texFiles.map(f => {
-        const t = texLoader.load(`${charDef.texDir}/${f}?v=${ASSET_VERSION}`);
-        t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; return t;
-      });
+      const texObjs = charDef.loadedTextures || texFiles.map(f => makeFallbackTexture(`${charDef.texDir}/${f}`));
       const texMap = charDef.texMap || null;
       let meshIdx = 0;
       fbx.traverse(c => {
@@ -1050,28 +1046,70 @@ function checkBothReady() {
 }
 
 // ─── PHASE 2: 選んだキャラをロード ────────────────────────────
-function loadCharacters() {
+function loadTexture(path) {
+  const texLoader = new THREE.TextureLoader();
+  return new Promise(resolve => {
+    texLoader.load(`${path}?v=${ASSET_VERSION}`, tex => {
+      tex.flipY = false;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      resolve(tex);
+    }, undefined, err => {
+      console.warn('Texture error:', path, err);
+      resolve(makeFallbackTexture(path));
+    });
+  });
+}
+
+function makeFallbackTexture(label = '') {
+  const canvas = document.createElement('canvas');
+  canvas.width = 16; canvas.height = 16;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#777'; ctx.fillRect(0, 0, 16, 16);
+  ctx.fillStyle = '#aaa'; ctx.fillRect(0, 0, 8, 8); ctx.fillRect(8, 8, 8, 8);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.flipY = false;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.name = `fallback:${label}`;
+  return tex;
+}
+
+async function loadCharacterAssets(charDef, label, progressOffset) {
+  const gltfLoader = new GLTFLoader();
+  const modelPromise = new Promise(resolve => {
+    gltfLoader.load(charDef.path, gltf => resolve(gltf.scene),
+      p => {
+        if (p.total > 0) {
+          const pct = progressOffset + Math.floor((p.loaded / p.total) * 25);
+          document.getElementById('loading-bar').style.width = pct + '%';
+        }
+      },
+      err => { console.warn(`${label} model error:`, err); resolve(null); });
+  });
+
+  const count = charDef.texDir ? (charDef.texCount || 1) : 0;
+  const texFiles = Array.from({length: count}, (_, i) => i === 0 ? 'Texture.jpg' : `Texture ${i}.jpg`);
+  const texturesPromise = Promise.all(texFiles.map(f => loadTexture(`${charDef.texDir}/${f}`)));
+
+  const [model, textures] = await Promise.all([modelPromise, texturesPromise]);
+  charDef.loadedTextures = textures;
+  document.getElementById('loading-text').textContent = `${label} 読み込み完了`;
+  document.getElementById('loading-bar').style.width = (progressOffset + 50) + '%';
+  return model;
+}
+
+async function loadCharacters() {
   document.getElementById('char-select').style.display = 'none';
   document.getElementById('loading-screen').style.display = 'flex';
   document.getElementById('loading-bar').style.width = '0%';
   document.getElementById('loading-text').textContent = 'キャラを読み込み中...';
 
-  let loaded = 0;
-  let model1 = null, model2 = null;
-
-  const done = () => {
-    loaded++;
-    document.getElementById('loading-bar').style.width = (loaded / 2 * 100) + '%';
-    if (loaded >= 2) initGame(model1, model2);
-  };
-
-  const gltfLoader = new GLTFLoader();
-  gltfLoader.load(CHARACTERS[p1Sel].path, gltf => { model1 = gltf.scene; done(); },
-    p => { if (p.total > 0) document.getElementById('loading-bar').style.width = Math.floor(p.loaded / p.total * 50) + '%'; },
-    err => { console.warn('P1 model error:', err); done(); });
-
-  gltfLoader.load(CHARACTERS[p2Sel].path, gltf => { model2 = gltf.scene; done(); },
-    undefined, err => { console.warn('P2 model error:', err); done(); });
+  const [model1, model2] = await Promise.all([
+    loadCharacterAssets(CHARACTERS[p1Sel], 'P1', 0),
+    loadCharacterAssets(CHARACTERS[p2Sel], 'P2', 50),
+  ]);
+  document.getElementById('loading-bar').style.width = '100%';
+  document.getElementById('loading-text').textContent = 'バトル開始...';
+  initGame(model1, model2);
 }
 
 // ─── GAME INIT ────────────────────────────────────────────────
