@@ -188,7 +188,7 @@
 <div id="message"></div>
 <div id="combo-p1"></div>
 <div id="combo-p2"></div>
-<div id="version-label">v0.2.0</div>
+<div id="version-label">v0.2.1</div>
 
 <div id="controls-guide">
   P1: [A/D] 移動 &nbsp; [W] ジャンプ &nbsp; [S] ガード &nbsp; [Q] パンチ &nbsp; [E] キック
@@ -275,6 +275,7 @@ const BASE_MOVE_SPEED = 4.5, BASE_JUMP_FORCE = 9, GRAVITY = -22;
 const CHAR_H = 1.8, CHAR_W = 0.5, MIN_DIST = 0.36;
 const FIXED_DT = 1 / 60;
 const MODEL_ROT_OFFSET = 0;
+const ASSET_VERSION = 'v0.2.1';
 
 const MOVE_DEFS = {
   light: {
@@ -588,7 +589,7 @@ class Player {
       const count = charDef.texCount || 1;
       const texFiles = Array.from({length: count}, (_, i) => i === 0 ? 'Texture.jpg' : `Texture ${i}.jpg`);
       const texObjs = texFiles.map(f => {
-        const t = texLoader.load(`${charDef.texDir}/${f}`);
+        const t = texLoader.load(`${charDef.texDir}/${f}?v=${ASSET_VERSION}`);
         t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; return t;
       });
       const texMap = charDef.texMap || null;
