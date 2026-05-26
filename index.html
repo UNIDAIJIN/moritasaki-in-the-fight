@@ -91,15 +91,6 @@
       position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
       color: #444; font-size: 11px; text-align: center; pointer-events: none; z-index: 10;
     }
-    .dmg-num {
-      position: fixed; font-size: 22px; font-weight: bold;
-      pointer-events: none; z-index: 15;
-      animation: floatUp 0.8s ease-out forwards;
-    }
-    @keyframes floatUp {
-      from { opacity: 1; transform: translateY(0) scale(1.2); }
-      to   { opacity: 0; transform: translateY(-60px) scale(0.8); }
-    }
     #combo-p1, #combo-p2 {
       position: fixed; top: 70px; font-size: 18px; font-weight: bold;
       pointer-events: none; z-index: 15; opacity: 0; transition: opacity 0.2s;
@@ -1199,7 +1190,6 @@ function resolveAttack(atk, def) {
   if (result !== 'none') {
     atk.hasHit = true;
     cameraShakeAmt = result === 'blocked' ? tip.move.cameraShake * 0.45 : tip.move.cameraShake;
-    showDmgNum(result === 'blocked' ? (tip.move.chip || 0) : tip.move.damage, def.x, def.y + CHAR_H * 0.75, atk.id);
     if (result === 'hit') {
       atk.combo++;
       atk.comboTimer = 1.5;
@@ -1207,19 +1197,6 @@ function resolveAttack(atk, def) {
     }
     if (def.hp <= 0) { clearInterval(timerInterval); setTimeout(() => endRound(atk.id), 500); }
   }
-}
-
-// ─── VFX ──────────────────────────────────────────────────────
-function showDmgNum(dmg, wx, wy, atkId) {
-  const v = new THREE.Vector3(wx, wy, 0).project(camera);
-  const el = document.createElement('div');
-  el.className = 'dmg-num';
-  el.textContent = dmg;
-  el.style.left = ((v.x * 0.5 + 0.5) * window.innerWidth) + 'px';
-  el.style.top  = ((-v.y * 0.5 + 0.5) * window.innerHeight) + 'px';
-  el.style.color = atkId === 1 ? '#4af' : '#f84';
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 800);
 }
 
 // ─── CAMERA ───────────────────────────────────────────────────
