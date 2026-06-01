@@ -331,12 +331,12 @@
     }
     body.mobile-mode #mobile-ctrl { display: flex; }
     .dpad {
-      display: grid; grid-template-columns: repeat(3, 58px); grid-template-rows: repeat(3, 58px);
-      gap: 8px; flex: 0 0 auto; touch-action: none;
+      display: grid; grid-template-columns: repeat(3, 68px); grid-template-rows: repeat(3, 68px);
+      gap: 10px; flex: 0 0 auto; touch-action: none;
     }
     .dpad-btn {
-      width: 58px; height: 58px; border: 0; border-radius: 10px;
-      background: #17181c; color: #c6c9d0; font: 900 26px Arial, sans-serif;
+      width: 68px; height: 68px; border: 0; border-radius: 12px;
+      background: #17181c; color: #c6c9d0; font: 900 30px Arial, sans-serif;
       box-shadow: 0 5px 0 #07080a, inset 0 1px 6px rgba(255,255,255,0.05);
       touch-action: none; -webkit-tap-highlight-color: transparent;
     }
@@ -349,11 +349,11 @@
     .dpad-btn[data-mobile-key="KeyD"] { grid-column: 3; grid-row: 2; }
     .dpad-btn[data-mobile-key="KeyS"] { grid-column: 2; grid-row: 3; }
     .mobile-buttons {
-      display: flex; align-items: center; gap: 16px; flex: 0 0 auto;
+      display: flex; align-items: center; gap: 20px; flex: 0 0 auto;
     }
     .mobile-btn {
-      width: 74px; height: 74px; border: 0; border-radius: 50%;
-      background: #17181c; color: #c6c9d0; font: bold 19px Arial, sans-serif;
+      width: 88px; height: 88px; border: 0; border-radius: 50%;
+      background: #17181c; color: #c6c9d0; font: bold 23px Arial, sans-serif;
       box-shadow: 0 5px 0 #07080a; touch-action: none;
       -webkit-tap-highlight-color: transparent;
     }
@@ -365,10 +365,10 @@
     }
     @media (orientation: portrait) {
       #mobile-ctrl { padding-top: 16px; }
-      .dpad { grid-template-columns: repeat(3, 54px); grid-template-rows: repeat(3, 54px); gap: 7px; }
-      .dpad-btn { width: 54px; height: 54px; font-size: 24px; }
-      .mobile-buttons { gap: 14px; }
-      .mobile-btn { width: 70px; height: 70px; font-size: 18px; }
+      .dpad { grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(3, 64px); gap: 8px; }
+      .dpad-btn { width: 64px; height: 64px; font-size: 28px; }
+      .mobile-buttons { gap: 18px; }
+      .mobile-btn { width: 84px; height: 84px; font-size: 22px; }
     }
   </style>
 </head>
