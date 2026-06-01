@@ -6,17 +6,22 @@
   <title>MoritaSaki in the Fight</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    :root { --mobile-pad-top: 100vh; --game-scale: 1; }
+    :root {
+      --mobile-pad-top: 100vh;
+      --game-scale: 1;
+      --game-width: 960px;
+      --game-height: 720px;
+      --shell-height: 720px;
+    }
     body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
     #game-shell {
       position: fixed; left: 50%; top: 50%;
-      width: 1280px; height: 720px; background: #000;
+      width: var(--game-width); height: var(--shell-height); background: #000;
       transform: translate(-50%, -50%) scale(var(--game-scale));
       transform-origin: center center;
     }
     body.mobile-mode #game-shell {
       top: 0;
-      height: 828px;
       transform: translateX(-50%) scale(var(--game-scale));
       transform-origin: top center;
     }
@@ -28,7 +33,7 @@
     body.mobile-mode #game-shell::before { top: 0; }
     body.mobile-mode #game-shell::after { bottom: 0; }
     #game-screen {
-      position: relative; width: 1280px; height: 720px; overflow: hidden; background: #000;
+      position: relative; width: var(--game-width); height: var(--game-height); overflow: hidden; background: #000;
     }
     body.mobile-mode #game-screen { top: 54px; }
     canvas {
@@ -491,7 +496,7 @@ import { getDatabase, ref, get, set, update, push, onValue, remove, onDisconnect
 
 const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m') || window.innerWidth <= 720;
 const ASSET_VERSION = 'v0.4.3';
-const GAME_WIDTH = 1280;
+const GAME_WIDTH = 960;
 const GAME_HEIGHT = 720;
 const MOBILE_BAR_HEIGHT = 54;
 
@@ -513,8 +518,11 @@ function resizeGameViewport() {
   const availableHeight = Math.max(1, window.innerHeight - reservedPadHeight);
   const scale = Math.min(window.innerWidth / GAME_WIDTH, availableHeight / shellHeight);
   document.documentElement.style.setProperty('--game-scale', String(Math.max(0.01, scale)));
+  document.documentElement.style.setProperty('--game-width', `${GAME_WIDTH}px`);
+  document.documentElement.style.setProperty('--game-height', `${GAME_HEIGHT}px`);
+  document.documentElement.style.setProperty('--shell-height', `${shellHeight}px`);
   document.documentElement.style.setProperty('--mobile-pad-top', MOBILE_RENDER_MODE ? `${Math.ceil(shellHeight * scale)}px` : '100vh');
-  camera.aspect = 16 / 9;
+  camera.aspect = GAME_WIDTH / GAME_HEIGHT;
   camera.updateProjectionMatrix();
   renderer.setSize(GAME_WIDTH, GAME_HEIGHT, false);
   renderer.domElement.style.width = '100%';
