@@ -527,8 +527,8 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x08070a);
 scene.fog = new THREE.Fog(0x08070a, 18, 42);
 
-const camera = new THREE.PerspectiveCamera(49, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(0, 2.2, 8.6);
+const camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 2.05, 7.4);
 resizeGameViewport();
 
 const stageRoot = new THREE.Group();
@@ -2254,7 +2254,7 @@ function resolveAttack(atk, def) {
 
 // ─── CAMERA ───────────────────────────────────────────────────
 let cameraShakeAmt = 0;
-const camPos = new THREE.Vector3(0, 2.2, 8.6);
+const camPos = new THREE.Vector3(0, 2.05, 7.4);
 const camFocus = new THREE.Vector3(0, 1.2, 0);
 
 function updateCamera() {
@@ -2264,8 +2264,8 @@ function updateCamera() {
   const camA = p1Alive ? p1 : p2;
   const midX = (p1Alive && p2Alive) ? (p1.x + p2.x) * 0.5 : camA.x;
   const dist  = (p1Alive && p2Alive) ? Math.abs(p1.x - p2.x) : 4;
-  const tgtZ  = Math.max(5.4, Math.min(12.2, dist * 0.78 + 5.25));
-  const tgtY  = 1.95 + dist * 0.045;
+  const tgtZ  = Math.max(4.8, Math.min(10.8, dist * 0.66 + 4.65));
+  const tgtY  = 1.85 + dist * 0.04;
   camPos.x += (midX - camPos.x) * 0.06;
   camPos.z += (tgtZ  - camPos.z) * 0.05;
   camPos.y += (tgtY  - camPos.y) * 0.05;
