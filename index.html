@@ -13,7 +13,8 @@
       display: block;
     }
     body.mobile-mode canvas {
-      top: calc((100vh - var(--mobile-pad-height)) / 2);
+      top: 0;
+      transform: translateX(-50%);
     }
     body.mobile-mode #loading-screen,
     body.mobile-mode #title-screen,
@@ -318,12 +319,12 @@
     }
     body.mobile-mode #mobile-ctrl { display: flex; }
     .dpad {
-      display: grid; grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(3, 46px);
-      gap: 6px; flex: 0 0 auto; touch-action: none;
+      display: grid; grid-template-columns: repeat(3, 58px); grid-template-rows: repeat(3, 58px);
+      gap: 8px; flex: 0 0 auto; touch-action: none;
     }
     .dpad-btn {
-      width: 46px; height: 46px; border: 0; border-radius: 8px;
-      background: #17181c; color: #c6c9d0; font: 900 22px Arial, sans-serif;
+      width: 58px; height: 58px; border: 0; border-radius: 10px;
+      background: #17181c; color: #c6c9d0; font: 900 26px Arial, sans-serif;
       box-shadow: 0 5px 0 #07080a, inset 0 1px 6px rgba(255,255,255,0.05);
       touch-action: none; -webkit-tap-highlight-color: transparent;
     }
@@ -336,12 +337,12 @@
     .dpad-btn[data-mobile-key="KeyD"] { grid-column: 3; grid-row: 2; }
     .dpad-btn[data-mobile-key="KeyS"] { grid-column: 2; grid-row: 3; }
     .mobile-buttons {
-      display: grid; grid-template-columns: repeat(2, 62px); grid-template-rows: repeat(2, 62px);
-      gap: 12px; flex: 0 0 auto;
+      display: grid; grid-template-columns: repeat(2, 74px); grid-template-rows: repeat(2, 74px);
+      gap: 14px; flex: 0 0 auto;
     }
     .mobile-btn {
-      width: 62px; height: 62px; border: 0; border-radius: 50%;
-      background: #17181c; color: #c6c9d0; font: bold 16px Arial, sans-serif;
+      width: 74px; height: 74px; border: 0; border-radius: 50%;
+      background: #17181c; color: #c6c9d0; font: bold 19px Arial, sans-serif;
       box-shadow: 0 5px 0 #07080a; touch-action: none;
       -webkit-tap-highlight-color: transparent;
     }
@@ -353,10 +354,10 @@
     }
     @media (orientation: portrait) {
       #mobile-ctrl { padding-top: 16px; }
-      .dpad { grid-template-columns: repeat(3, 42px); grid-template-rows: repeat(3, 42px); gap: 5px; }
-      .dpad-btn { width: 42px; height: 42px; font-size: 20px; }
-      .mobile-buttons { grid-template-columns: repeat(2, 56px); grid-template-rows: repeat(2, 56px); }
-      .mobile-btn { width: 56px; height: 56px; }
+      .dpad { grid-template-columns: repeat(3, 54px); grid-template-rows: repeat(3, 54px); gap: 7px; }
+      .dpad-btn { width: 54px; height: 54px; font-size: 24px; }
+      .mobile-buttons { grid-template-columns: repeat(2, 70px); grid-template-rows: repeat(2, 70px); }
+      .mobile-btn { width: 70px; height: 70px; font-size: 18px; }
       .title-logo { font-size: clamp(44px, 17vw, 78px); }
       #title-mode-select { grid-template-columns: 42px 1fr 42px; gap: 8px; }
       .title-mode-nav { height: 44px; }
