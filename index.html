@@ -334,9 +334,30 @@
     }
     .dpad-btn {
       width: 62px; height: 62px; border: 0; border-radius: 11px;
-      background: #17181c; color: #c6c9d0; font: 900 27px Arial, sans-serif;
+      position: relative; background: #17181c; color: #c6c9d0; font: 900 27px Arial, sans-serif;
       box-shadow: 0 5px 0 #07080a, inset 0 1px 6px rgba(255,255,255,0.05);
       touch-action: none; -webkit-tap-highlight-color: transparent;
+    }
+    .dpad-btn::before {
+      content: ""; position: absolute; left: 50%; top: 50%;
+      width: 0; height: 0; transform: translate(-50%, -50%);
+      border-style: solid;
+    }
+    .dpad-btn[data-mobile-key="KeyW"]::before {
+      border-width: 0 12px 20px 12px;
+      border-color: transparent transparent #c6c9d0 transparent;
+    }
+    .dpad-btn[data-mobile-key="KeyA"]::before {
+      border-width: 12px 20px 12px 0;
+      border-color: transparent #c6c9d0 transparent transparent;
+    }
+    .dpad-btn[data-mobile-key="KeyD"]::before {
+      border-width: 12px 0 12px 20px;
+      border-color: transparent transparent transparent #c6c9d0;
+    }
+    .dpad-btn[data-mobile-key="KeyS"]::before {
+      border-width: 20px 12px 0 12px;
+      border-color: #c6c9d0 transparent transparent transparent;
     }
     .dpad-btn[data-mobile-key="KeyW"] { grid-column: 2; grid-row: 1; }
     .dpad-btn[data-mobile-key="KeyA"] { grid-column: 1; grid-row: 2; }
@@ -459,11 +480,11 @@
 
 <div id="mobile-ctrl" aria-label="P1 mobile controller">
   <div class="dpad" aria-label="direction buttons">
-    <button class="dpad-btn" data-mobile-key="KeyW" aria-label="up">▲</button>
-    <button class="dpad-btn" data-mobile-key="KeyA" aria-label="left">◀</button>
+    <button class="dpad-btn" data-mobile-key="KeyW" aria-label="up"></button>
+    <button class="dpad-btn" data-mobile-key="KeyA" aria-label="left"></button>
     <div class="dpad-center"></div>
-    <button class="dpad-btn" data-mobile-key="KeyD" aria-label="right">▶</button>
-    <button class="dpad-btn" data-mobile-key="KeyS" aria-label="down">▼</button>
+    <button class="dpad-btn" data-mobile-key="KeyD" aria-label="right"></button>
+    <button class="dpad-btn" data-mobile-key="KeyS" aria-label="down"></button>
   </div>
   <div class="mobile-buttons">
     <button class="mobile-btn primary" data-mobile-key="KeyQ">A</button>
