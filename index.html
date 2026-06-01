@@ -14,6 +14,13 @@
       transform: translate(-50%, -50%) scale(var(--game-scale));
       transform-origin: center center;
     }
+    body.mobile-mode #game-screen::before,
+    body.mobile-mode #game-screen::after {
+      content: ""; position: absolute; left: 0; right: 0; height: 54px;
+      background: #000; z-index: 125; pointer-events: none;
+    }
+    body.mobile-mode #game-screen::before { top: 0; }
+    body.mobile-mode #game-screen::after { bottom: 0; }
     body.mobile-mode #game-screen {
       top: 0;
       transform: translateX(-50%) scale(var(--game-scale));
