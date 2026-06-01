@@ -8,24 +8,29 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     :root { --mobile-pad-height: 0px; --game-scale: 1; }
     body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
-    #game-screen {
+    #game-shell {
       position: fixed; left: 50%; top: 50%;
-      width: 1280px; height: 720px; overflow: hidden; background: #000;
+      width: 1280px; height: 720px; background: #000;
       transform: translate(-50%, -50%) scale(var(--game-scale));
       transform-origin: center center;
     }
-    body.mobile-mode #game-screen::before,
-    body.mobile-mode #game-screen::after {
-      content: ""; position: absolute; left: 0; right: 0; height: 54px;
-      background: #000; z-index: 125; pointer-events: none;
-    }
-    body.mobile-mode #game-screen::before { top: 0; }
-    body.mobile-mode #game-screen::after { bottom: 0; }
-    body.mobile-mode #game-screen {
+    body.mobile-mode #game-shell {
       top: 0;
+      height: 828px;
       transform: translateX(-50%) scale(var(--game-scale));
       transform-origin: top center;
     }
+    body.mobile-mode #game-shell::before,
+    body.mobile-mode #game-shell::after {
+      content: ""; position: absolute; left: 0; right: 0; height: 54px;
+      background: #000; pointer-events: none;
+    }
+    body.mobile-mode #game-shell::before { top: 0; }
+    body.mobile-mode #game-shell::after { bottom: 0; }
+    #game-screen {
+      position: relative; width: 1280px; height: 720px; overflow: hidden; background: #000;
+    }
+    body.mobile-mode #game-screen { top: 54px; }
     canvas {
       position: absolute; inset: 0;
       display: block;
@@ -369,6 +374,7 @@
 </head>
 <body>
 
+<div id="game-shell">
 <div id="game-screen">
 <!-- Loading -->
 <div id="loading-screen">
@@ -451,6 +457,7 @@
   P2: [←/→] 移動 &nbsp; [↑] ジャンプ &nbsp; [↓] ガード &nbsp; [,] パンチ &nbsp; [.] キック
 </div>
 </div>
+</div>
 
 <div id="mobile-ctrl" aria-label="P1 mobile controller">
   <div class="dpad" aria-label="direction buttons">
@@ -486,6 +493,7 @@ const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m') || wind
 const ASSET_VERSION = 'v0.4.3';
 const GAME_WIDTH = 1280;
 const GAME_HEIGHT = 720;
+const MOBILE_BAR_HEIGHT = 54;
 
 // ─── RENDERER ─────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({
@@ -506,7 +514,8 @@ function resizeGameViewport() {
   const availableHeight = Math.max(1, window.innerHeight - mobilePadHeight);
   document.documentElement.style.setProperty('--mobile-pad-height', `${mobilePadHeight}px`);
 
-  const scale = Math.min(window.innerWidth / GAME_WIDTH, availableHeight / GAME_HEIGHT);
+  const shellHeight = GAME_HEIGHT + (MOBILE_RENDER_MODE ? MOBILE_BAR_HEIGHT * 2 : 0);
+  const scale = Math.min(window.innerWidth / GAME_WIDTH, availableHeight / shellHeight);
   document.documentElement.style.setProperty('--game-scale', String(Math.max(0.01, scale)));
   camera.aspect = 16 / 9;
   camera.updateProjectionMatrix();
