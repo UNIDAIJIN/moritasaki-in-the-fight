@@ -22,20 +22,13 @@
     }
     body.mobile-mode #game-shell {
       top: 0;
+      padding: 54px 0;
       transform: translateX(-50%) scale(var(--game-scale));
       transform-origin: top center;
     }
-    body.mobile-mode #game-shell::before,
-    body.mobile-mode #game-shell::after {
-      content: ""; position: absolute; left: 0; right: 0; height: 54px;
-      background: #000; pointer-events: none;
-    }
-    body.mobile-mode #game-shell::before { top: 0; }
-    body.mobile-mode #game-shell::after { bottom: 0; }
     #game-screen {
       position: relative; width: var(--game-width); height: var(--game-height); overflow: hidden; background: #000;
     }
-    body.mobile-mode #game-screen { top: 54px; }
     canvas {
       position: absolute; inset: 0;
       display: block;
