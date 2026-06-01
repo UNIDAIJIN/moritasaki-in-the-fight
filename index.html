@@ -6,7 +6,7 @@
   <title>MoritaSaki in the Fight</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    :root { --mobile-pad-height: 0px; --game-scale: 1; }
+    :root { --mobile-pad-top: 100vh; --game-scale: 1; }
     body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
     #game-shell {
       position: fixed; left: 50%; top: 50%;
@@ -322,7 +322,7 @@
     /* ── Mobile controller (?m) ── */
     body.mobile-mode #controls-guide { display: none; }
     #mobile-ctrl {
-      position: fixed; left: 0; right: 0; bottom: 0; z-index: 110;
+      position: fixed; left: 0; right: 0; top: var(--mobile-pad-top); bottom: 0; z-index: 110;
       display: none; align-items: center; justify-content: space-between;
       gap: 18px; padding: 18px 22px calc(18px + env(safe-area-inset-bottom));
       background: rgba(24,24,28,0.92); border-top: 1px solid rgba(255,255,255,0.08);
@@ -508,15 +508,12 @@ renderer.toneMappingExposure = 1.1;
 document.getElementById('game-screen').appendChild(renderer.domElement);
 
 function resizeGameViewport() {
-  const mobilePadHeight = MOBILE_RENDER_MODE
-    ? Math.ceil(document.getElementById('mobile-ctrl')?.getBoundingClientRect().height || 0)
-    : 0;
-  const availableHeight = Math.max(1, window.innerHeight - mobilePadHeight);
-  document.documentElement.style.setProperty('--mobile-pad-height', `${mobilePadHeight}px`);
-
   const shellHeight = GAME_HEIGHT + (MOBILE_RENDER_MODE ? MOBILE_BAR_HEIGHT * 2 : 0);
+  const reservedPadHeight = MOBILE_RENDER_MODE ? Math.min(320, Math.max(220, window.innerHeight * 0.34)) : 0;
+  const availableHeight = Math.max(1, window.innerHeight - reservedPadHeight);
   const scale = Math.min(window.innerWidth / GAME_WIDTH, availableHeight / shellHeight);
   document.documentElement.style.setProperty('--game-scale', String(Math.max(0.01, scale)));
+  document.documentElement.style.setProperty('--mobile-pad-top', MOBILE_RENDER_MODE ? `${Math.ceil(shellHeight * scale)}px` : '100vh');
   camera.aspect = 16 / 9;
   camera.updateProjectionMatrix();
   renderer.setSize(GAME_WIDTH, GAME_HEIGHT, false);
