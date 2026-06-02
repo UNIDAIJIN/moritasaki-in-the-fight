@@ -767,6 +767,9 @@ const BASE_MOVE_SPEED = 4.5, BASE_JUMP_FORCE = 9, GRAVITY = -22;
 const CHAR_H = 1.8, CHAR_W = 0.5, MIN_DIST = 0.36;
 const FIXED_DT = 1 / 60;
 const MODEL_ROT_OFFSET = 0;
+const JUST_GUARD_WINDOW = 0.12;
+const JUST_GUARD_RECOIL = 0.24;
+const JUST_GUARD_PUSH = 3.4;
 
 const MOVE_DEFS = {
   light: {
@@ -1048,6 +1051,7 @@ class Player {
     this.stateTime = 0;
     this.atkPhase = 0; this.atkType = null; this.activeMove = null; this.hasHit = false;
     this.hitStunTimer = 0; this.hitFlashTimer = 0; this.guardSETimer = 0; this.blockStunTimer = 0;
+    this.justGuardTimer = 0;
     this.combo = 0; this.comboTimer = 0;
     this.deathSpin = 0;
     this.prevPunch = false; this.prevKick = false;
@@ -1235,11 +1239,34 @@ class Player {
     return this.grounded && this.state === 'block' && this.facingDir !== fromDir;
   }
 
+  isJustGuardingAgainst(fromDir) {
+    return this.isGuardingAgainst(fromDir) && this.justGuardTimer > 0;
+  }
+
+  receiveJustGuardRecoil(fromDir) {
+    this.state = 'recoil';
+    this.stateTime = JUST_GUARD_RECOIL;
+    this.atkType = null;
+    this.activeMove = null;
+    this.atkPhase = 0;
+    this.vx = -fromDir * JUST_GUARD_PUSH;
+  }
+
   receiveAttack(move, fromDir) {
     if (this.state === 'dead') return 'none';
     if (this.hitStunTimer > 0 || this.blockStunTimer > 0) return 'none';
 
     if (this.isGuardingAgainst(fromDir)) {
+      if (this.isJustGuardingAgainst(fromDir)) {
+        this.blockStunTimer = Math.min(move.blockstun * 0.45, 0.14);
+        this.state = 'blockstun';
+        this.stateTime = this.blockStunTimer;
+        this.vx = fromDir * ((move.blockPush || 1) * 0.55);
+        this.guardSETimer = 0.24;
+        this.hitFlashTimer = 0.08;
+        playSE('se_hit.mp3');
+        return 'justBlocked';
+      }
       this.hp = Math.max(0, this.hp - (move.chip || 0));
       this.blockStunTimer = move.blockstun;
       this.state = 'blockstun';
@@ -1284,6 +1311,7 @@ class Player {
     this.blockStunTimer = Math.max(0, this.blockStunTimer - dt);
     this.hitFlashTimer = Math.max(0, this.hitFlashTimer - dt);
     this.guardSETimer = Math.max(0, this.guardSETimer - dt);
+    this.justGuardTimer = Math.max(0, this.justGuardTimer - dt);
     this.comboTimer   = Math.max(0, this.comboTimer - dt);
     if (this.comboTimer <= 0 && this.combo > 0) { this.combo = 0; this._updateCombo(); }
 
@@ -1300,7 +1328,7 @@ class Player {
       return;
     }
 
-    if (!['punch','kick','hitstun','blockstun','dead'].includes(this.state))
+    if (!['punch','kick','hitstun','blockstun','recoil','dead'].includes(this.state))
       this.facingDir = other.x >= this.x ? 1 : -1;
 
     const inp = this.getInput();
@@ -1311,6 +1339,9 @@ class Player {
       if (this.stateTime <= 0) this.state = 'idle';
     } else if (this.state === 'blockstun') {
       this.vx *= 0.90;
+      if (this.stateTime <= 0) this.state = 'idle';
+    } else if (this.state === 'recoil') {
+      this.vx *= 0.86;
       if (this.stateTime <= 0) this.state = 'idle';
     } else if (this.state === 'punch' || this.state === 'kick') {
       if (!this.grounded) {
@@ -1328,6 +1359,7 @@ class Player {
       } else if (kickPressed) {
         this.startAttack('heavy');
       } else if (inp.block && this.grounded) {
+        if (this.state !== 'block') this.justGuardTimer = JUST_GUARD_WINDOW;
         this.state = 'block'; this.vx = 0;
       } else if (this.grounded) {
         const moveSpeed = BASE_MOVE_SPEED * this.stats.speed;
@@ -1356,7 +1388,7 @@ class Player {
 
     if (this.hitStunTimer > 0) this.playAnim('idle');
     else {
-      const m = { idle:'idle', walk:'walk', jump:'jump', punch:'punch', kick:'kick', block:'block', blockstun:'block', dead:'idle' };
+      const m = { idle:'idle', walk:'walk', jump:'jump', punch:'punch', kick:'kick', block:'block', blockstun:'block', recoil:'idle', dead:'idle' };
       this.playAnim(m[this.state] || 'idle');
     }
     this._sync3D();
@@ -2523,7 +2555,13 @@ function resolveAttack(atk, def) {
   if (result !== 'none') {
     atk.hasHit = true;
     hitStopTimer = Math.max(hitStopTimer, result === 'blocked' ? (tip.move.blockStop || 0.035) : (tip.move.hitStop || 0.06));
-    cameraShakeAmt = result === 'blocked' ? tip.move.cameraShake * 0.45 : tip.move.cameraShake;
+    if (result === 'justBlocked') {
+      atk.receiveJustGuardRecoil(atk.facingDir);
+      hitStopTimer = Math.max(hitStopTimer, 0.075);
+      cameraShakeAmt = tip.move.cameraShake * 0.32;
+    } else {
+      cameraShakeAmt = result === 'blocked' ? tip.move.cameraShake * 0.45 : tip.move.cameraShake;
+    }
     if (result === 'hit') {
       atk.combo++;
       atk.comboTimer = 1.5;
