@@ -1535,7 +1535,8 @@ let onlineStarted = false;
 let onlineRelayActive = false;
 let onlineRelayFallbackTimer = null;
 let onlineStateSyncTimer = 0;
-const ONLINE_STATE_SYNC_INTERVAL = 0.15;
+const ONLINE_STATE_SYNC_DIRECT_INTERVAL = 0.05;
+const ONLINE_STATE_SYNC_RELAY_INTERVAL = 0.1;
 let onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
 
 function clearRoundIntroTimers() {
@@ -2062,7 +2063,7 @@ function syncOnlineState(dt) {
   if (currentBattleMode !== 'online' || !onlineStarted || !isOnlineHost() || !p1 || !p2) return;
   onlineStateSyncTimer -= dt;
   if (onlineStateSyncTimer > 0) return;
-  onlineStateSyncTimer = ONLINE_STATE_SYNC_INTERVAL;
+  onlineStateSyncTimer = onlineRelayActive ? ONLINE_STATE_SYNC_RELAY_INTERVAL : ONLINE_STATE_SYNC_DIRECT_INTERVAL;
   sendOnline({
     type: 'state',
     p1: packPlayerState(p1),
@@ -2071,6 +2072,14 @@ function syncOnlineState(dt) {
     p1Wins,
     p2Wins,
   });
+}
+
+function updateOnlineGuestRender(dt) {
+  if (!isOnlineGuest() || !p1 || !p2) return;
+  if (p1.mixer) p1.mixer.update(dt);
+  if (p2.mixer) p2.mixer.update(dt);
+  p1._sync3D();
+  p2._sync3D();
 }
 
 function applyOnlineState(msg) {
@@ -2798,6 +2807,11 @@ function animate() {
     if (hitStopTimer > 0) {
       hitStopTimer = Math.max(0, hitStopTimer - frameDt);
       accumulator = 0;
+      updateOnlineGuestRender(frameDt);
+    } else if (isOnlineGuest()) {
+      syncOnlineInput();
+      updateOnlineGuestRender(frameDt);
+      accumulator = 0;
     } else {
       accumulator = Math.min(accumulator + frameDt, FIXED_DT * 5);
       while (accumulator >= FIXED_DT) {
@@ -2805,7 +2819,7 @@ function animate() {
         updateComBrain(FIXED_DT);
         p1.update(FIXED_DT, p2); p2.update(FIXED_DT, p1);
         separatePlayers();
-        if (!isOnlineGuest()) checkCombat();
+        checkCombat();
         accumulator -= FIXED_DT;
       }
     }
