@@ -1936,13 +1936,14 @@ function applyOnlineSelection(msg) {
 }
 
 function getLocalOnlineInput() {
+  const p2KeysEnabled = !MOBILE_RENDER_MODE;
   return {
-    left: keys.has('KeyA'),
-    right: keys.has('KeyD'),
-    jump: keys.has('KeyW'),
-    block: keys.has('KeyS'),
-    punch: keys.has('KeyQ'),
-    kick: keys.has('KeyE'),
+    left: keys.has('KeyA') || (p2KeysEnabled && keys.has('ArrowLeft')),
+    right: keys.has('KeyD') || (p2KeysEnabled && keys.has('ArrowRight')),
+    jump: keys.has('KeyW') || (p2KeysEnabled && keys.has('ArrowUp')),
+    block: keys.has('KeyS') || (p2KeysEnabled && keys.has('ArrowDown')),
+    punch: keys.has('KeyQ') || (p2KeysEnabled && keys.has('Comma')),
+    kick: keys.has('KeyE') || (p2KeysEnabled && keys.has('Period')),
   };
 }
 
