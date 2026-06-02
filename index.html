@@ -506,7 +506,7 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
-import { getDatabase, ref, get, set, update, push, onValue, remove, onDisconnect, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
+import { getDatabase, ref, get, set, update, push, onValue, remove, onDisconnect, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m') || window.innerWidth <= 720;
 const ASSET_VERSION = 'v0.4.3';
@@ -1807,15 +1807,30 @@ async function startOnlineMatchmaking() {
   resetOnlineSession();
   setOnlineStatus('MATCHING...');
   const waitingRef = ref(db, `${ONLINE_DB_ROOT}/waiting`);
-  const waitingSnap = await get(waitingRef);
-  const waitingRoomId = waitingSnap.exists() ? waitingSnap.val() : null;
+  const waitingRoomId = await claimWaitingRoom(waitingRef);
 
   if (waitingRoomId) {
-    await remove(waitingRef);
-    await joinOnlineRoom(db, waitingRoomId);
+    const joined = await joinOnlineRoom(db, waitingRoomId);
+    if (!joined) await createOnlineRoom(db, waitingRef);
   } else {
     await createOnlineRoom(db, waitingRef);
   }
+}
+
+async function claimWaitingRoom(waitingRef) {
+  let claimedRoomId = null;
+  await runTransaction(waitingRef, current => {
+    claimedRoomId = null;
+    if (!current) return current;
+    claimedRoomId = current;
+    return null;
+  }, { applyLocally: false });
+  return claimedRoomId;
+}
+
+async function publishWaitingRoom(waitingRef, roomId) {
+  const result = await runTransaction(waitingRef, current => current || roomId, { applyLocally: false });
+  return result.snapshot.exists() ? result.snapshot.val() : null;
 }
 
 async function createOnlineRoom(db, waitingRef) {
@@ -1835,7 +1850,21 @@ async function createOnlineRoom(db, waitingRef) {
     offer: { type: offer.type, sdp: offer.sdp },
     createdAt: serverTimestamp(),
   });
-  await set(waitingRef, onlineRoomId);
+  const publishedRoomId = await publishWaitingRoom(waitingRef, onlineRoomId);
+  if (publishedRoomId !== onlineRoomId) {
+    const staleRoomRef = onlineRoomRef;
+    try { onlinePeer?.close(); } catch (_) {}
+    onlineRoomId = null;
+    onlineRoomRef = null;
+    onlineRole = null;
+    onlinePeer = null;
+    onlineChannel = null;
+    await remove(staleRoomRef).catch(() => {});
+    const claimedRoomId = publishedRoomId ? await claimWaitingRoom(waitingRef) : null;
+    const joined = claimedRoomId ? await joinOnlineRoom(db, claimedRoomId) : false;
+    if (!joined) await createOnlineRoom(db, waitingRef);
+    return;
+  }
   onDisconnect(onlineRoomRef).remove();
   setOnlineStatus('WAITING FOR PLAYER...');
 
@@ -1856,7 +1885,11 @@ async function joinOnlineRoom(db, roomId) {
   const roomSnap = await get(onlineRoomRef);
   if (!roomSnap.exists() || !roomSnap.val().offer) {
     setOnlineStatus('マッチが見つかりませんでした');
-    return;
+    return false;
+  }
+  if (roomSnap.val().status !== 'waiting') {
+    setOnlineStatus('別のマッチを探しています...');
+    return false;
   }
 
   onlinePeer = createOnlinePeer();
@@ -1876,6 +1909,7 @@ async function joinOnlineRoom(db, roomId) {
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/hostCandidates`), snap => {
     snap.forEach(child => onlinePeer.addIceCandidate(child.val()).catch(() => {}));
   });
+  return true;
 }
 
 document.getElementById('online-match').addEventListener('click', () => {
