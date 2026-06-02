@@ -2403,6 +2403,8 @@ function createRollbackBattleGameClass() {
       this.players = [cloneRollbackFighter(1, -3), cloneRollbackFighter(2, 3)];
       this.timerFrames = 99 * 60;
       this.winnerId = 0;
+      this.p1Sel = p1Sel;
+      this.p2Sel = p2Sel;
     }
 
     tick(playerInputs) {
@@ -2434,6 +2436,8 @@ function createRollbackBattleGameClass() {
         players: this.players.map(player => ({ ...player })),
         timerFrames: this.timerFrames,
         winnerId: this.winnerId,
+        p1Sel: this.p1Sel,
+        p2Sel: this.p2Sel,
       };
     }
 
@@ -2441,6 +2445,8 @@ function createRollbackBattleGameClass() {
       this.players = value.players.map(player => ({ ...player }));
       this.timerFrames = value.timerFrames;
       this.winnerId = value.winnerId;
+      this.p1Sel = value.p1Sel ?? this.p1Sel;
+      this.p2Sel = value.p2Sel ?? this.p2Sel;
     }
 
     draw(canvas) {
@@ -2492,21 +2498,24 @@ async function startRollbackBattle() {
   resetOnlineSession();
   resetRollbackSession();
   currentBattleMode = 'rollback';
-  p1Sel = 0;
-  p2Sel = 2;
   p1Wins = 0;
   p2Wins = 0;
   updateWinDots();
   startBGM();
-  setOnlineStatus('ROLLBACK LOADING');
+  showCharSelect();
+}
+
+async function startRollbackGame() {
   await loadCharacters();
+  clearRoundIntroTimers();
+  if (timerInterval) clearInterval(timerInterval);
   gameState = 'playing';
-  document.getElementById('message').style.display = 'none';
   setOnlineStatus('ROLLBACK CONNECTING');
   if (!(await waitForNetplayReady())) {
     setOnlineStatus('NetplayJS を読み込めません');
     return;
   }
+  document.getElementById('message').style.display = 'none';
   startRollbackWrapper();
 }
 
@@ -2717,6 +2726,7 @@ function renderCharSelect() {
   const p2Status = document.getElementById('cs-p2-status');
   const isComMode = currentBattleMode === 'com';
   const isOnlineMode = currentBattleMode === 'online';
+  const isRollbackMode = isRollbackBattle();
   container.innerHTML = '';
   const p1OnTitle = p1CharFocus === 'title';
   const p2OnTitle = !isComMode && p2CharFocus === 'title';
@@ -2730,6 +2740,9 @@ function renderCharSelect() {
     p2Status.textContent = onlineLocalPlayerId === 2
       ? 'YOU: A / D 選択   Q 決定'
       : 'P2: 相手の選択待ち';
+  } else if (isRollbackMode) {
+    p1Status.textContent = 'P1: A / D 選択   W / S 上下   Q 決定';
+    p2Status.textContent = 'P2: ← / → 選択   ↑ / ↓ 上下   , 決定';
   } else {
     p1Status.textContent = 'P1: A / D 選択   W / S 上下   Q 決定';
     p2Status.textContent = 'P2: ← / → 選択   ↑ / ↓ 上下   , 決定';
@@ -2775,6 +2788,7 @@ function renderCharSelect() {
 function returnFromCharSelectToTitle() {
   p1Ready = false;
   p2Ready = false;
+  resetRollbackSession();
   currentBattleMode = '2p';
   charSelectLocked = false;
   p1CharFocus = 'characters';
@@ -2928,6 +2942,15 @@ function checkBothReady() {
       sendOnline({ type: 'start', p1Sel, p2Sel });
       setTimeout(startOnlineGame, 250);
     }
+  } else if (isRollbackBattle() && p1Ready && p2Ready) {
+    charSelectLocked = true;
+    document.getElementById('cs-countdown').textContent = 'READY';
+    setTimeout(() => {
+      startRollbackGame().catch(err => {
+        console.warn(err);
+        setOnlineStatus('ROLLBACK ERROR');
+      });
+    }, 250);
   } else if (p1Ready && p2Ready) {
     charSelectLocked = true;
     document.getElementById('cs-countdown').textContent = 'READY';
