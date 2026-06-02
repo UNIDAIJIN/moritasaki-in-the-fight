@@ -231,6 +231,10 @@
       background: #111; color: #fff; font: 900 14px Arial, Helvetica, sans-serif;
       letter-spacing: 2px; box-shadow: 0 5px 0 #000; cursor: pointer;
     }
+    .online-actions button.active {
+      border-color: #fff; box-shadow: 0 7px 0 #000, 0 0 18px rgba(29,255,57,0.48);
+      color: #fff;
+    }
     .online-actions button:active { transform: translateY(3px); box-shadow: 0 2px 0 #000; }
 
     /* ── Character Select ── */
@@ -858,6 +862,7 @@ function pressGameKey(code) {
   startBGM();
   if (handleCreditsKey(code)) return;
   if (handleTitleKey(code)) return;
+  if (handleOnlineKey(code)) return;
   if (!keys.has(code)) {
     handleCharSelectKey(code);
   }
@@ -1593,6 +1598,8 @@ function showOnlineScreen() {
   document.getElementById('title-screen').style.display = 'none';
   document.getElementById('online-screen').style.display = 'flex';
   document.body.classList.remove('mobile-controls-active');
+  onlineActionIndex = 0;
+  renderOnlineActions();
   setOnlineStatus('QUICK MATCH を押してください');
   gameState = 'online';
 }
@@ -1615,6 +1622,8 @@ function returnToOnlineScreen(statusText = 'QUICK MATCH を押してください
   p1Ready = false; p2Ready = false;
   gameState = 'online';
   titleLocked = false;
+  onlineActionIndex = 0;
+  renderOnlineActions();
   setOnlineStatus(statusText);
 }
 
@@ -1662,6 +1671,42 @@ document.getElementById('title-mode-window').addEventListener('click', e => {
 document.getElementById('title-screen').addEventListener('pointerdown', e => {
   if (e.target.closest('#title-mode-select')) return;
 });
+
+let onlineActionIndex = 0;
+const ONLINE_ACTION_IDS = ['online-match', 'online-back'];
+
+function renderOnlineActions() {
+  ONLINE_ACTION_IDS.forEach((id, i) => {
+    document.getElementById(id)?.classList.toggle('active', i === onlineActionIndex);
+  });
+}
+
+function setOnlineAction(index) {
+  onlineActionIndex = (index + ONLINE_ACTION_IDS.length) % ONLINE_ACTION_IDS.length;
+  renderOnlineActions();
+  playTitleCursorSE();
+}
+
+function activateOnlineAction() {
+  document.getElementById(ONLINE_ACTION_IDS[onlineActionIndex])?.click();
+}
+
+function handleOnlineKey(code) {
+  if (gameState !== 'online') return false;
+  if (code === 'KeyA' || code === 'ArrowLeft') {
+    setOnlineAction(onlineActionIndex - 1);
+    return true;
+  }
+  if (code === 'KeyD' || code === 'ArrowRight') {
+    setOnlineAction(onlineActionIndex + 1);
+    return true;
+  }
+  if (code === 'KeyQ' || code === 'Enter' || code === 'Space') {
+    activateOnlineAction();
+    return true;
+  }
+  return false;
+}
 
 function showCreditsScreen() {
   if (gameState !== 'title' || titleLocked) return;
@@ -1967,6 +2012,8 @@ async function joinOnlineRoom(db, roomId) {
 }
 
 document.getElementById('online-match').addEventListener('click', () => {
+  onlineActionIndex = 0;
+  renderOnlineActions();
   startBGM();
   startOnlineMatchmaking().catch(err => {
     console.warn(err);
@@ -1974,6 +2021,8 @@ document.getElementById('online-match').addEventListener('click', () => {
   });
 });
 document.getElementById('online-back').addEventListener('click', () => {
+  onlineActionIndex = 1;
+  renderOnlineActions();
   resetOnlineSession();
   playTitleConfirmSE();
   showTitleScreen();
