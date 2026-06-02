@@ -59,8 +59,18 @@
     <p class="note">If NetplayJS connects correctly, two browsers should control separate squares with rollback-style input sync.</p>
   </main>
 
-  <script src="https://unpkg.com/netplayjs@0.4.1/dist/netplay.js" integrity="sha384-6Yb8LWAT488jwK+nIjvD4S5/poq1Xn69NYjH1RXKHoaUOaFJrKQ1rfGQgKm8oQjX" crossorigin="anonymous"></script>
   <script>
+    function loadNetplayFallback() {
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/netplayjs@0.4.1/dist/netplay.js";
+      script.integrity = "sha384-6Yb8LWAT488jwK+nIjvD4S5/poq1Xn69NYjH1RXKHoaUOaFJrKQ1rfGQgKm8oQjX";
+      script.crossOrigin = "anonymous";
+      document.body.appendChild(script);
+    }
+  </script>
+  <script src="https://unpkg.com/netplayjs@0.4.1/dist/netplay.js" integrity="sha384-6Yb8LWAT488jwK+nIjvD4S5/poq1Xn69NYjH1RXKHoaUOaFJrKQ1rfGQgKm8oQjX" crossorigin="anonymous" onerror="loadNetplayFallback()"></script>
+  <script>
+    function startRollbackTest() {
     class RollbackTestGame extends netplayjs.Game {
       static timestep = 1000 / 60;
       static canvasSize = { width: 640, height: 480 };
@@ -127,8 +137,15 @@
       }
     }
 
-    const wrapper = new netplayjs.RollbackWrapper(RollbackTestGame);
-    wrapper.start(document.getElementById("screen"));
+      const wrapper = new netplayjs.RollbackWrapper(RollbackTestGame);
+      wrapper.start();
+    }
+
+    const waitForNetplay = setInterval(() => {
+      if (!window.netplayjs) return;
+      clearInterval(waitForNetplay);
+      startRollbackTest();
+    }, 50);
   </script>
 </body>
 </html>
