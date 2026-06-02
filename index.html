@@ -202,9 +202,13 @@
       overflow-wrap: anywhere;
     }
     .credits-back {
-      position: relative; margin-top: 42px; color: rgba(255,255,255,0.66);
-      font: 800 11px Arial, Helvetica, sans-serif; letter-spacing: 2px;
+      position: relative; margin-top: 42px; min-width: 180px; height: 46px;
+      border: 2px solid rgba(255,255,255,0.72); background: #111; color: #fff;
+      font: 900 14px Arial, Helvetica, sans-serif; letter-spacing: 2px;
+      box-shadow: 0 7px 0 #000, 0 0 18px rgba(29,255,57,0.48);
+      cursor: pointer;
     }
+    .credits-back:active { transform: translateY(3px); box-shadow: 0 2px 0 #000; }
 
     /* ── Online ── */
     #online-screen {
@@ -441,7 +445,7 @@
     <div class="credits-row"><div class="credits-role">MUSIC</div><div class="credits-name">NASUMI HEIKE</div></div>
     <div class="credits-row"><div class="credits-role">VOICE</div><div class="credits-name">RIKU ISHIHARA, NATSUMI HEIKE,<br>TAIGA NINOMIYA, MAKI SHIBATA</div></div>
   </div>
-  <div class="credits-back">ENTER / Q BACK</div>
+  <button class="credits-back" id="credits-back" type="button">BACK</button>
 </div>
 
 <!-- Character Select -->
@@ -1726,14 +1730,14 @@ function closeCreditsScreen() {
 
 function handleCreditsKey(code) {
   if (gameState !== 'credits') return false;
-  if (code === 'Enter' || code === 'Space' || code === 'KeyQ' || code === 'KeyE' || code === 'Comma') {
+  if (code === 'Enter' || code === 'Space' || code === 'KeyQ') {
     closeCreditsScreen();
     return true;
   }
   return true;
 }
 
-document.getElementById('credits-screen').addEventListener('pointerdown', () => {
+document.getElementById('credits-back').addEventListener('click', () => {
   startBGM();
   closeCreditsScreen();
 });
