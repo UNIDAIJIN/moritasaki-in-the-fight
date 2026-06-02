@@ -1534,6 +1534,8 @@ let onlineChannel = null;
 let onlineStarted = false;
 let onlineRelayActive = false;
 let onlineRelayFallbackTimer = null;
+let onlineStateSyncTimer = 0;
+const ONLINE_STATE_SYNC_INTERVAL = 0.15;
 let onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
 
 function clearRoundIntroTimers() {
@@ -1856,6 +1858,7 @@ function resetOnlineSession() {
   onlineChannel = null;
   onlineStarted = false;
   onlineRelayActive = false;
+  onlineStateSyncTimer = 0;
   currentBattleMode = '2p';
   onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
 }
@@ -1926,6 +1929,8 @@ function handleOnlineMessage(msg) {
     p1Sel = msg.p1Sel ?? 0;
     p2Sel = msg.p2Sel ?? 1;
     startOnlineGame();
+  } else if (msg.type === 'state') {
+    applyOnlineState(msg);
   } else if (msg.type === 'roundEnd') {
     endRound(msg.winnerId ?? null, true);
   } else if (msg.type === 'matchEnd') {
@@ -2016,9 +2021,76 @@ function syncOnlineInput() {
   sendOnline({ type: 'input', input: getLocalOnlineInput() });
 }
 
+function packPlayerState(player) {
+  return {
+    x: player.x,
+    y: player.y,
+    vx: player.vx,
+    vy: player.vy,
+    hp: player.hp,
+    state: player.state,
+    stateTime: player.stateTime,
+    grounded: player.grounded,
+    facingDir: player.facingDir,
+    hitStunTimer: player.hitStunTimer,
+    blockStunTimer: player.blockStunTimer,
+    hitFlashTimer: player.hitFlashTimer,
+    guardSETimer: player.guardSETimer,
+    combo: player.combo,
+    comboTimer: player.comboTimer,
+  };
+}
+
+function applyPlayerState(player, state) {
+  if (!player || !state) return;
+  [
+    'x', 'y', 'vx', 'vy', 'hp', 'stateTime',
+    'hitStunTimer', 'blockStunTimer', 'hitFlashTimer',
+    'guardSETimer', 'combo', 'comboTimer'
+  ].forEach(key => {
+    if (typeof state[key] === 'number') player[key] = state[key];
+  });
+  if (typeof state.state === 'string') player.state = state.state;
+  if (typeof state.grounded === 'boolean') player.grounded = state.grounded;
+  if (state.facingDir === 1 || state.facingDir === -1) player.facingDir = state.facingDir;
+  player.updateHPBar();
+  player._updateCombo();
+  player._sync3D();
+}
+
+function syncOnlineState(dt) {
+  if (currentBattleMode !== 'online' || !onlineStarted || !isOnlineHost() || !p1 || !p2) return;
+  onlineStateSyncTimer -= dt;
+  if (onlineStateSyncTimer > 0) return;
+  onlineStateSyncTimer = ONLINE_STATE_SYNC_INTERVAL;
+  sendOnline({
+    type: 'state',
+    p1: packPlayerState(p1),
+    p2: packPlayerState(p2),
+    roundTimer,
+    p1Wins,
+    p2Wins,
+  });
+}
+
+function applyOnlineState(msg) {
+  if (!isOnlineGuest() || !onlineStarted || !p1 || !p2) return;
+  applyPlayerState(p1, msg.p1);
+  applyPlayerState(p2, msg.p2);
+  if (typeof msg.roundTimer === 'number') {
+    roundTimer = msg.roundTimer;
+    document.getElementById('timer-box').textContent = roundTimer;
+    if (roundTimer <= 10) document.getElementById('timer-box').style.color = '#f44';
+  }
+  if (typeof msg.p1Wins === 'number') p1Wins = msg.p1Wins;
+  if (typeof msg.p2Wins === 'number') p2Wins = msg.p2Wins;
+  updateWinDots();
+}
+
 async function startOnlineGame() {
   if (onlineStarted) return;
   onlineStarted = true;
+  onlineStateSyncTimer = 0;
   currentBattleMode = 'online';
   document.getElementById('online-screen').style.display = 'none';
   document.getElementById('loading-screen').style.display = 'flex';
@@ -2733,10 +2805,11 @@ function animate() {
         updateComBrain(FIXED_DT);
         p1.update(FIXED_DT, p2); p2.update(FIXED_DT, p1);
         separatePlayers();
-        checkCombat();
+        if (!isOnlineGuest()) checkCombat();
         accumulator -= FIXED_DT;
       }
     }
+    syncOnlineState(frameDt);
   } else {
     accumulator = 0;
     if (gameState === 'roundEnd' || gameState === 'roundIntro') {
