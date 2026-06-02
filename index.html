@@ -461,8 +461,8 @@
   <div class="online-title">ONLINE BATTLE</div>
   <div id="online-status">READY</div>
   <div class="online-actions">
-    <button id="online-rollback" type="button">ROLLBACK MATCH</button>
-    <button id="online-match" type="button">QUICK MATCH</button>
+    <button id="online-rollback" type="button">TEST MATCH</button>
+    <button id="online-match" type="button">STABLE MATCH</button>
     <button id="online-back" type="button">BACK</button>
   </div>
 </div>
@@ -1735,11 +1735,11 @@ function showOnlineScreen() {
   document.body.classList.remove('mobile-controls-active');
   onlineActionIndex = 0;
   renderOnlineActions();
-  setOnlineStatus('QUICK MATCH を押してください');
+  setOnlineStatus('STABLE MATCH を押してください');
   gameState = 'online';
 }
 
-function returnToOnlineScreen(statusText = 'QUICK MATCH を押してください') {
+function returnToOnlineScreen(statusText = 'STABLE MATCH を押してください') {
   clearRoundIntroTimers();
   clearRoundEndTimers();
   if (timerInterval) clearInterval(timerInterval);
@@ -2002,7 +2002,7 @@ function handleOnlineMessage(msg) {
     p2Sel = msg.p2Sel ?? p2Sel;
     startRollbackGame().catch(err => {
       console.warn(err);
-      setOnlineStatus('ROLLBACK ERROR');
+      setOnlineStatus('TEST ERROR');
     });
   } else if (msg.type === 'state') {
     applyOnlineState(msg);
@@ -2040,7 +2040,7 @@ function startOnlineRelayFallback() {
     if (onlineRequestedMode === 'rollback' && onlineRoomRef) {
       const snap = await get(onlineRoomRef).catch(() => null);
       if (!snap?.exists() || snap.val()?.status !== 'matched') {
-        setOnlineStatus('ROLLBACK MATCHING...');
+        setOnlineStatus('TEST MATCHING...');
         return;
       }
     }
@@ -2106,7 +2106,7 @@ function applyRollbackRoomSelection(snapshotValue) {
     p2Sel = snapshotValue.start.p2Sel ?? p2Sel;
     startRollbackGame().catch(err => {
       console.warn(err);
-      setOnlineStatus('ROLLBACK ERROR');
+      setOnlineStatus('TEST ERROR');
     });
     return;
   }
@@ -2486,7 +2486,7 @@ function enterRollbackCharSelectAfterMatch() {
   rollbackMatched = true;
   setTimeout(() => {
     if (!isRollbackBattle()) return;
-    setOnlineStatus('ROLLBACK CONNECTED');
+    setOnlineStatus('TEST CONNECTED');
     p1Ready = false;
     p2Ready = false;
     showCharSelect();
@@ -2585,10 +2585,10 @@ function startRollbackWrapper() {
     const RollbackBattleGame = createRollbackBattleGameClass();
     rollbackWrapper = new window.netplayjs.RollbackWrapper(RollbackBattleGame);
     rollbackWrapper.start();
-    setOnlineStatus('ROLLBACK WAITING...');
+    setOnlineStatus('TEST WAITING...');
   } catch (err) {
     console.warn(err);
-    setOnlineStatus('ROLLBACK ERROR');
+    setOnlineStatus('TEST ERROR');
   }
 }
 
@@ -2619,7 +2619,7 @@ async function startRollbackBattle() {
   p2Wins = 0;
   updateWinDots();
   startBGM();
-  setOnlineStatus('ROLLBACK MATCHING...');
+  setOnlineStatus('TEST MATCHING...');
   await startOnlineMatchmaking('rollback');
 }
 
@@ -2649,7 +2649,7 @@ async function startOnlineMatchmaking(requestedMode = 'online') {
   resetOnlineSession();
   onlineRequestedMode = requestedMode;
   currentBattleMode = requestedMode === 'rollback' ? 'rollback' : 'online';
-  setOnlineStatus(requestedMode === 'rollback' ? 'ROLLBACK MATCHING...' : 'MATCHING...');
+  setOnlineStatus(requestedMode === 'rollback' ? 'TEST MATCHING...' : 'MATCHING...');
   const waitingRef = ref(db, `${ONLINE_DB_ROOT}/waiting/${requestedMode}`);
   const waitingRoomId = await claimWaitingRoom(waitingRef);
 
@@ -2799,7 +2799,7 @@ document.getElementById('online-rollback').addEventListener('click', () => {
   renderOnlineActions();
   startRollbackBattle().catch(err => {
     console.warn(err);
-    setOnlineStatus('ROLLBACK ERROR');
+    setOnlineStatus('TEST ERROR');
   });
 });
 document.getElementById('online-match').addEventListener('click', () => {
@@ -3074,7 +3074,7 @@ function checkBothReady() {
       setTimeout(() => {
         startRollbackGame().catch(err => {
           console.warn(err);
-          setOnlineStatus('ROLLBACK ERROR');
+          setOnlineStatus('TEST ERROR');
         });
       }, 250);
     }
