@@ -808,6 +808,7 @@ const ONLINE_FIREBASE_CONFIG = {
 };
 const ONLINE_DB_ROOT = 'kakuge-online-v1';
 const ONLINE_WAITING_TTL_MS = 90_000;
+const ONLINE_MAX_ROOMS = 50;
 
 const DEFAULT_STATS = { hp: 100, speed: 1.00, jump: 1.00, width: 0.34 };
 
@@ -1865,7 +1866,21 @@ async function publishWaitingRoom(waitingRef, roomId) {
   return result.snapshot.exists() ? result.snapshot.val() : null;
 }
 
+async function onlineRoomCapacityAvailable(db) {
+  const roomsSnap = await get(ref(db, `${ONLINE_DB_ROOT}/rooms`));
+  let activeRooms = 0;
+  roomsSnap.forEach(child => {
+    const room = child.val();
+    if (room?.status !== 'closed') activeRooms++;
+  });
+  return activeRooms < ONLINE_MAX_ROOMS;
+}
+
 async function createOnlineRoom(db, waitingRef) {
+  if (!(await onlineRoomCapacityAvailable(db))) {
+    setOnlineStatus('ONLINE BUSY');
+    return;
+  }
   onlineRole = 'host';
   onlineLocalPlayerId = 1;
   onlineRoomRef = push(ref(db, `${ONLINE_DB_ROOT}/rooms`));
