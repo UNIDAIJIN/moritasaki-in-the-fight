@@ -1157,11 +1157,17 @@ class Player {
       if (this.id === onlineLocalPlayerId) return getLocalOnlineInput();
       return onlineRemoteInput;
     }
-    if (this.id === 1) return {
-      left: keys.has('KeyA'), right: keys.has('KeyD'),
-      jump: keys.has('KeyW'), block: keys.has('KeyS'),
-      punch: keys.has('KeyQ'), kick: keys.has('KeyE'),
-    };
+    if (this.id === 1) {
+      const p2AsP1 = currentBattleMode === 'com' && !MOBILE_RENDER_MODE;
+      return {
+        left: keys.has('KeyA') || (p2AsP1 && keys.has('ArrowLeft')),
+        right: keys.has('KeyD') || (p2AsP1 && keys.has('ArrowRight')),
+        jump: keys.has('KeyW') || (p2AsP1 && keys.has('ArrowUp')),
+        block: keys.has('KeyS') || (p2AsP1 && keys.has('ArrowDown')),
+        punch: keys.has('KeyQ') || (p2AsP1 && keys.has('Comma')),
+        kick: keys.has('KeyE') || (p2AsP1 && keys.has('Period')),
+      };
+    }
     if (currentBattleMode === 'com') return getComInput(this, p1);
     return {
       left: keys.has('ArrowLeft'), right: keys.has('ArrowRight'),
