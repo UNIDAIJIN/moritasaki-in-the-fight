@@ -461,6 +461,7 @@
   <div class="online-title">ONLINE BATTLE</div>
   <div id="online-status">READY</div>
   <div class="online-actions">
+    <button id="online-rollback" type="button">ROLLBACK MATCH</button>
     <button id="online-match" type="button">QUICK MATCH</button>
     <button id="online-back" type="button">BACK</button>
   </div>
@@ -541,6 +542,17 @@
   }
 }
 </script>
+
+<script>
+function loadNetplayFallback() {
+  const script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/netplayjs@0.4.1/dist/netplay.js';
+  script.integrity = 'sha384-6Yb8LWAT488jwK+nIjvD4S5/poq1Xn69NYjH1RXKHoaUOaFJrKQ1rfGQgKm8oQjX';
+  script.crossOrigin = 'anonymous';
+  document.head.appendChild(script);
+}
+</script>
+<script src="https://unpkg.com/netplayjs@0.4.1/dist/netplay.js" integrity="sha384-6Yb8LWAT488jwK+nIjvD4S5/poq1Xn69NYjH1RXKHoaUOaFJrKQ1rfGQgKm8oQjX" crossorigin="anonymous" onerror="loadNetplayFallback()"></script>
 
 <script type="module">
 import * as THREE from 'three';
@@ -941,13 +953,32 @@ function setupMobileController() {
     try { navigator.vibrate?.(ms); } catch (_) {}
   }
 
+  function mobileKeyValue(code) {
+    return ({ KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd', KeyQ: 'q', KeyE: 'e' })[code] || '';
+  }
+
+  function dispatchMobileKeyboard(code, type) {
+    window.dispatchEvent(new KeyboardEvent(type, {
+      code,
+      key: mobileKeyValue(code),
+      bubbles: true,
+      cancelable: true,
+    }));
+  }
+
   function syncMobileKeys() {
     const nextKeys = new Set(buttonKeys);
     for (const code of nextKeys) {
-      if (!activeMobileKeys.has(code)) pressGameKey(code);
+      if (!activeMobileKeys.has(code)) {
+        dispatchMobileKeyboard(code, 'keydown');
+        pressGameKey(code);
+      }
     }
     for (const code of activeMobileKeys) {
-      if (!nextKeys.has(code)) releaseGameKey(code);
+      if (!nextKeys.has(code)) {
+        dispatchMobileKeyboard(code, 'keyup');
+        releaseGameKey(code);
+      }
     }
     activeMobileKeys.clear();
     for (const code of nextKeys) activeMobileKeys.add(code);
@@ -1538,6 +1569,12 @@ let onlineStateSyncTimer = 0;
 const ONLINE_STATE_SYNC_DIRECT_INTERVAL = 0.05;
 const ONLINE_STATE_SYNC_RELAY_INTERVAL = 0.1;
 let onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
+let rollbackWrapper = null;
+let rollbackRenderState = null;
+
+function isRollbackBattle() {
+  return currentBattleMode === 'rollback';
+}
 
 function clearRoundIntroTimers() {
   roundIntroTimers.forEach(id => clearTimeout(id));
@@ -1763,7 +1800,7 @@ document.getElementById('title-screen').addEventListener('pointerdown', e => {
 });
 
 let onlineActionIndex = 0;
-const ONLINE_ACTION_IDS = ['online-match', 'online-back'];
+const ONLINE_ACTION_IDS = ['online-rollback', 'online-match', 'online-back'];
 
 function renderOnlineActions() {
   ONLINE_ACTION_IDS.forEach((id, i) => {
@@ -1862,6 +1899,11 @@ function resetOnlineSession() {
   onlineStateSyncTimer = 0;
   currentBattleMode = '2p';
   onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
+}
+
+function resetRollbackSession() {
+  rollbackRenderState = null;
+  rollbackWrapper = null;
 }
 
 function cleanupOnlineRoom() {
@@ -2096,6 +2138,378 @@ function applyOnlineState(msg) {
   updateWinDots();
 }
 
+function cloneRollbackFighter(id, x) {
+  return {
+    id,
+    x,
+    y: GROUND_Y,
+    vx: 0,
+    vy: 0,
+    hp: DEFAULT_STATS.hp,
+    state: 'idle',
+    stateTime: 0,
+    grounded: true,
+    facingDir: id === 1 ? 1 : -1,
+    atkType: null,
+    hasHit: false,
+    hitStunTimer: 0,
+    blockStunTimer: 0,
+    justGuardTimer: 0,
+    prevPunch: false,
+    prevKick: false,
+  };
+}
+
+function netplayKeyDown(input, names) {
+  if (!input) return false;
+  for (const name of names) {
+    if (typeof input.isKeyDown === 'function' && input.isKeyDown(name)) return true;
+    if (typeof input.keyDown === 'function' && input.keyDown(name)) return true;
+    if (typeof input.isPressed === 'function' && input.isPressed(name)) return true;
+    if (input.keys?.[name] || input.keyboard?.[name] || input.buttons?.[name]) return true;
+    if (input._keys?.[name] || input._keyboard?.[name]) return true;
+  }
+  return false;
+}
+
+function readNetplayInput(input) {
+  const arrows = typeof input?.arrowKeys === 'function' ? input.arrowKeys() : { x: 0, y: 0 };
+  const left = arrows.x < -0.1 || netplayKeyDown(input, ['a', 'A', 'KeyA', 'ArrowLeft']);
+  const right = arrows.x > 0.1 || netplayKeyDown(input, ['d', 'D', 'KeyD', 'ArrowRight']);
+  const jump = arrows.y > 0.1 || netplayKeyDown(input, ['w', 'W', 'KeyW', 'ArrowUp']);
+  const block = arrows.y < -0.1 || netplayKeyDown(input, ['s', 'S', 'KeyS', 'ArrowDown']);
+  return {
+    left,
+    right,
+    jump,
+    block,
+    punch: netplayKeyDown(input, ['q', 'Q', 'KeyQ', 'z', 'Z', 'KeyZ', ' ', 'Space', 'Enter']),
+    kick: netplayKeyDown(input, ['e', 'E', 'KeyE', 'x', 'X', 'KeyX', '.', 'Period']),
+  };
+}
+
+function rollbackMove(type) {
+  return MOVE_DEFS[type === 'heavy' ? 'heavy' : 'light'];
+}
+
+function rollbackStartAttack(fighter, type) {
+  const move = rollbackMove(type);
+  fighter.state = type === 'heavy' ? 'kick' : 'punch';
+  fighter.stateTime = move.startup + move.active + move.recovery;
+  fighter.atkType = type;
+  fighter.hasHit = false;
+  if (fighter.grounded) fighter.vx = fighter.facingDir * (move.selfSlide || 0);
+}
+
+function rollbackUpdateFighter(fighter, other, input) {
+  fighter.stateTime = Math.max(0, fighter.stateTime - FIXED_DT);
+  fighter.hitStunTimer = Math.max(0, fighter.hitStunTimer - FIXED_DT);
+  fighter.blockStunTimer = Math.max(0, fighter.blockStunTimer - FIXED_DT);
+  fighter.justGuardTimer = Math.max(0, fighter.justGuardTimer - FIXED_DT);
+  if (fighter.state === 'dead') {
+    fighter.vy += GRAVITY * FIXED_DT;
+    fighter.x += fighter.vx * FIXED_DT;
+    fighter.y += fighter.vy * FIXED_DT;
+    return;
+  }
+
+  if (!['punch','kick','hitstun','blockstun','recoil','dead'].includes(fighter.state)) {
+    fighter.facingDir = other.x >= fighter.x ? 1 : -1;
+  }
+
+  const punchPressed = input.punch && !fighter.prevPunch;
+  const kickPressed = input.kick && !fighter.prevKick;
+  if (fighter.state === 'hitstun') {
+    fighter.vx *= 0.94;
+    if (fighter.stateTime <= 0) fighter.state = 'idle';
+  } else if (fighter.state === 'blockstun') {
+    fighter.vx *= 0.90;
+    if (fighter.stateTime <= 0) fighter.state = 'idle';
+  } else if (fighter.state === 'recoil') {
+    fighter.vx *= 0.86;
+    if (fighter.stateTime <= 0) fighter.state = 'idle';
+  } else if (fighter.state === 'punch' || fighter.state === 'kick') {
+    fighter.vx *= fighter.grounded ? 0.82 : 1;
+    if (fighter.stateTime <= 0) {
+      fighter.state = 'idle';
+      fighter.atkType = null;
+      fighter.hasHit = false;
+    }
+  } else if (punchPressed) {
+    rollbackStartAttack(fighter, 'light');
+  } else if (kickPressed) {
+    rollbackStartAttack(fighter, 'heavy');
+  } else if (input.block && fighter.grounded) {
+    if (fighter.state !== 'block') fighter.justGuardTimer = JUST_GUARD_WINDOW;
+    fighter.state = 'block';
+    fighter.vx = 0;
+  } else if (fighter.grounded) {
+    if (input.left) {
+      fighter.vx = -BASE_MOVE_SPEED;
+      fighter.state = 'walk';
+    } else if (input.right) {
+      fighter.vx = BASE_MOVE_SPEED;
+      fighter.state = 'walk';
+    } else {
+      fighter.vx = 0;
+      fighter.state = 'idle';
+    }
+    if (input.jump) {
+      fighter.vy = BASE_JUMP_FORCE;
+      fighter.grounded = false;
+      fighter.state = 'jump';
+    }
+  } else {
+    if (input.left) fighter.vx = -BASE_MOVE_SPEED * 0.85;
+    else if (input.right) fighter.vx = BASE_MOVE_SPEED * 0.85;
+    fighter.state = 'jump';
+  }
+
+  fighter.prevPunch = input.punch;
+  fighter.prevKick = input.kick;
+  if (!fighter.grounded) fighter.vy += GRAVITY * FIXED_DT;
+  fighter.x += fighter.vx * FIXED_DT;
+  fighter.y += fighter.vy * FIXED_DT;
+  if (fighter.y <= GROUND_Y) {
+    fighter.y = GROUND_Y;
+    fighter.vy = 0;
+    if (!fighter.grounded) {
+      fighter.grounded = true;
+      if (fighter.state === 'jump') fighter.state = 'idle';
+    }
+  }
+  fighter.x = Math.max(STAGE_MIN, Math.min(STAGE_MAX, fighter.x));
+}
+
+function rollbackSeparate(a, b) {
+  const gap = b.x - a.x;
+  if (gap >= MIN_DIST) return;
+  const correction = (MIN_DIST - gap) * 0.5 + 0.001;
+  a.x = Math.max(STAGE_MIN, a.x - correction);
+  b.x = Math.min(STAGE_MAX, b.x + correction);
+  if (a.vx > 0) a.vx = 0;
+  if (b.vx < 0) b.vx = 0;
+}
+
+function rollbackAttackBox(fighter) {
+  if (!fighter.atkType || fighter.hasHit) return null;
+  const move = rollbackMove(fighter.atkType);
+  const elapsed = move.startup + move.active + move.recovery - fighter.stateTime;
+  if (elapsed < move.startup || elapsed > move.startup + move.active) return null;
+  return {
+    move,
+    minX: fighter.facingDir > 0 ? fighter.x - 0.18 : fighter.x - move.range,
+    maxX: fighter.facingDir > 0 ? fighter.x + move.range : fighter.x + 0.18,
+    minY: fighter.y + move.heightMin,
+    maxY: fighter.y + move.heightMax,
+  };
+}
+
+function rollbackBodyBox(fighter) {
+  return {
+    minX: fighter.x - 0.34,
+    maxX: fighter.x + 0.34,
+    minY: fighter.y + 0.1,
+    maxY: fighter.y + CHAR_H * 0.95,
+  };
+}
+
+function rollbackReceiveAttack(def, move, fromDir) {
+  if (def.state === 'dead' || def.hitStunTimer > 0 || def.blockStunTimer > 0) return 'none';
+  const guarding = def.grounded && def.state === 'block' && def.facingDir !== fromDir;
+  if (guarding && def.justGuardTimer > 0) {
+    def.blockStunTimer = Math.min(move.blockstun * 0.45, 0.14);
+    def.state = 'blockstun';
+    def.stateTime = def.blockStunTimer;
+    def.vx = fromDir * ((move.blockPush || 1) * 0.55);
+    return 'justBlocked';
+  }
+  if (guarding) {
+    def.hp = Math.max(0, def.hp - (move.chip || 0));
+    def.blockStunTimer = move.blockstun;
+    def.state = 'blockstun';
+    def.stateTime = move.blockstun;
+    def.vx = fromDir * (move.blockPush || 1);
+  } else {
+    def.hp = Math.max(0, def.hp - move.damage);
+    def.hitStunTimer = move.hitstun;
+    def.state = 'hitstun';
+    def.stateTime = move.hitstun;
+    def.vx = fromDir * move.knockback;
+  }
+  if (def.hp <= 0) {
+    def.state = 'dead';
+    def.stateTime = 9999;
+    def.vx = fromDir * 36;
+    def.vy = 18;
+  }
+  return guarding ? 'blocked' : 'hit';
+}
+
+function rollbackResolveAttack(atk, def) {
+  const tip = rollbackAttackBox(atk);
+  if (!tip) return;
+  const body = rollbackBodyBox(def);
+  if (tip.maxX <= body.minX || tip.minX >= body.maxX) return;
+  if (tip.maxY <= body.minY || tip.minY >= body.maxY) return;
+  const result = rollbackReceiveAttack(def, tip.move, atk.facingDir);
+  if (result !== 'none') {
+    atk.hasHit = true;
+    if (result === 'justBlocked') {
+      atk.state = 'recoil';
+      atk.stateTime = JUST_GUARD_RECOIL;
+      atk.atkType = null;
+      atk.vx = -atk.facingDir * JUST_GUARD_PUSH;
+    }
+  }
+}
+
+function applyRollbackRenderState(state) {
+  if (!state || !p1 || !p2) return;
+  [p1, p2].forEach((player, i) => {
+    const src = state.players[i];
+    player.x = src.x;
+    player.y = src.y;
+    player.vx = src.vx;
+    player.vy = src.vy;
+    player.hp = src.hp;
+    player.state = src.state;
+    player.stateTime = src.stateTime;
+    player.grounded = src.grounded;
+    player.facingDir = src.facingDir;
+    player.hitStunTimer = src.hitStunTimer;
+    player.blockStunTimer = src.blockStunTimer;
+    player.updateHPBar();
+    player._sync3D();
+  });
+  roundTimer = Math.max(0, Math.ceil(state.timerFrames / 60));
+  document.getElementById('timer-box').textContent = roundTimer;
+  const message = document.getElementById('message');
+  if (state.winnerId) {
+    message.textContent = `${state.winnerId === 1 ? CHARACTERS[p1Sel].name : CHARACTERS[p2Sel].name} WINS!`;
+    message.style.display = 'block';
+  } else if (gameState === 'playing') {
+    message.style.display = 'none';
+  }
+}
+
+function createRollbackBattleGameClass() {
+  return class RollbackBattleGame extends window.netplayjs.Game {
+    static timestep = 1000 / 60;
+    static canvasSize = { width: GAME_WIDTH, height: GAME_HEIGHT };
+
+    constructor() {
+      super();
+      this.players = [cloneRollbackFighter(1, -3), cloneRollbackFighter(2, 3)];
+      this.timerFrames = 99 * 60;
+      this.winnerId = 0;
+    }
+
+    tick(playerInputs) {
+      if (this.winnerId) return;
+      const inputs = [
+        { left: false, right: false, jump: false, block: false, punch: false, kick: false },
+        { left: false, right: false, jump: false, block: false, punch: false, kick: false },
+      ];
+      for (const [player, input] of playerInputs.entries()) {
+        const id = player.getID();
+        if (id === 0 || id === 1) inputs[id] = readNetplayInput(input);
+      }
+      rollbackUpdateFighter(this.players[0], this.players[1], inputs[0]);
+      rollbackUpdateFighter(this.players[1], this.players[0], inputs[1]);
+      rollbackSeparate(this.players[0], this.players[1]);
+      rollbackResolveAttack(this.players[0], this.players[1]);
+      rollbackResolveAttack(this.players[1], this.players[0]);
+      this.timerFrames = Math.max(0, this.timerFrames - 1);
+      if (this.players[0].hp <= 0) this.winnerId = 2;
+      else if (this.players[1].hp <= 0) this.winnerId = 1;
+      else if (this.timerFrames <= 0) {
+        if (this.players[0].hp > this.players[1].hp) this.winnerId = 1;
+        else if (this.players[1].hp > this.players[0].hp) this.winnerId = 2;
+      }
+    }
+
+    serialize() {
+      return {
+        players: this.players.map(player => ({ ...player })),
+        timerFrames: this.timerFrames,
+        winnerId: this.winnerId,
+      };
+    }
+
+    deserialize(value) {
+      this.players = value.players.map(player => ({ ...player }));
+      this.timerFrames = value.timerFrames;
+      this.winnerId = value.winnerId;
+    }
+
+    draw(canvas) {
+      rollbackRenderState = this.serialize();
+      applyRollbackRenderState(rollbackRenderState);
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  };
+}
+
+function startRollbackWrapper() {
+  if (!window.netplayjs?.RollbackWrapper) {
+    setOnlineStatus('NetplayJS を読み込めません');
+    return;
+  }
+  try {
+    const RollbackBattleGame = createRollbackBattleGameClass();
+    rollbackWrapper = new window.netplayjs.RollbackWrapper(RollbackBattleGame);
+    rollbackWrapper.start();
+    setOnlineStatus('ROLLBACK CONNECTING');
+  } catch (err) {
+    console.warn(err);
+    setOnlineStatus('ROLLBACK ERROR');
+  }
+}
+
+function waitForNetplayReady(timeoutMs = 8000) {
+  return new Promise(resolve => {
+    if (window.netplayjs?.RollbackWrapper) {
+      resolve(true);
+      return;
+    }
+    const start = performance.now();
+    const timer = setInterval(() => {
+      if (window.netplayjs?.RollbackWrapper) {
+        clearInterval(timer);
+        resolve(true);
+      } else if (performance.now() - start >= timeoutMs) {
+        clearInterval(timer);
+        resolve(false);
+      }
+    }, 100);
+  });
+}
+
+async function startRollbackBattle() {
+  if (gameState !== 'online') return;
+  resetOnlineSession();
+  resetRollbackSession();
+  currentBattleMode = 'rollback';
+  p1Sel = 0;
+  p2Sel = 2;
+  p1Wins = 0;
+  p2Wins = 0;
+  updateWinDots();
+  startBGM();
+  setOnlineStatus('ROLLBACK LOADING');
+  await loadCharacters();
+  gameState = 'playing';
+  document.getElementById('message').style.display = 'none';
+  setOnlineStatus('ROLLBACK CONNECTING');
+  if (!(await waitForNetplayReady())) {
+    setOnlineStatus('NetplayJS を読み込めません');
+    return;
+  }
+  startRollbackWrapper();
+}
+
 async function startOnlineGame() {
   if (onlineStarted) return;
   onlineStarted = true;
@@ -2245,8 +2659,16 @@ async function joinOnlineRoom(db, roomId) {
   return true;
 }
 
-document.getElementById('online-match').addEventListener('click', () => {
+document.getElementById('online-rollback').addEventListener('click', () => {
   onlineActionIndex = 0;
+  renderOnlineActions();
+  startRollbackBattle().catch(err => {
+    console.warn(err);
+    setOnlineStatus('ROLLBACK ERROR');
+  });
+});
+document.getElementById('online-match').addEventListener('click', () => {
+  onlineActionIndex = 1;
   renderOnlineActions();
   startBGM();
   startOnlineMatchmaking().catch(err => {
@@ -2255,9 +2677,10 @@ document.getElementById('online-match').addEventListener('click', () => {
   });
 });
 document.getElementById('online-back').addEventListener('click', () => {
-  onlineActionIndex = 1;
+  onlineActionIndex = ONLINE_ACTION_IDS.length - 1;
   renderOnlineActions();
   resetOnlineSession();
+  resetRollbackSession();
   playTitleConfirmSE();
   showTitleScreen();
 });
@@ -2633,11 +3056,12 @@ function startRound() {
 
   roundIntroTimers.push(setTimeout(() => {
     el.textContent = 'FIGHT!!';
-  }, 900));
+    }, 900));
 
   roundIntroTimers.push(setTimeout(() => {
     el.style.display = 'none';
     gameState = 'playing';
+    if (isRollbackBattle()) return;
     timerInterval = setInterval(() => {
       roundTimer--;
       document.getElementById('timer-box').textContent = roundTimer;
@@ -2808,6 +3232,11 @@ function animate() {
       hitStopTimer = Math.max(0, hitStopTimer - frameDt);
       accumulator = 0;
       updateOnlineGuestRender(frameDt);
+    } else if (isRollbackBattle()) {
+      if (p1?.mixer) p1.mixer.update(frameDt);
+      if (p2?.mixer) p2.mixer.update(frameDt);
+      if (rollbackRenderState) applyRollbackRenderState(rollbackRenderState);
+      accumulator = 0;
     } else if (isOnlineGuest()) {
       syncOnlineInput();
       updateOnlineGuestRender(frameDt);
