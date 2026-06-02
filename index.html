@@ -1567,8 +1567,11 @@ let onlineRequestedMode = 'online';
 let onlineRelayActive = false;
 let onlineRelayFallbackTimer = null;
 let onlineStateSyncTimer = 0;
+let onlineHeartbeatTimer = null;
 const ONLINE_STATE_SYNC_DIRECT_INTERVAL = 0.05;
 const ONLINE_STATE_SYNC_RELAY_INTERVAL = 0.1;
+const ONLINE_HOST_HEARTBEAT_MS = 3000;
+const ONLINE_HOST_STALE_MS = 12_000;
 let onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
 let rollbackWrapper = null;
 let rollbackRenderState = null;
@@ -1889,7 +1892,9 @@ function getOnlineDb() {
 
 function resetOnlineSession() {
   if (onlineRelayFallbackTimer) clearTimeout(onlineRelayFallbackTimer);
+  if (onlineHeartbeatTimer) clearInterval(onlineHeartbeatTimer);
   onlineRelayFallbackTimer = null;
+  onlineHeartbeatTimer = null;
   try { onlineChannel?.close(); } catch (_) {}
   try { onlinePeer?.close(); } catch (_) {}
   if (onlineRoomRef && onlineRole === 'host') remove(onlineRoomRef).catch(() => {});
@@ -1921,6 +1926,14 @@ function cleanupOnlineRoom() {
   if (!onlineRoomRef) return;
   if (onlineRole === 'host') remove(onlineRoomRef).catch(() => {});
   else update(onlineRoomRef, { status: 'closed' }).catch(() => {});
+}
+
+function startOnlineHostHeartbeat() {
+  if (!onlineRoomRef || onlineRole !== 'host') return;
+  if (onlineHeartbeatTimer) clearInterval(onlineHeartbeatTimer);
+  const beat = () => update(onlineRoomRef, { hostSeenAt: Date.now() }).catch(() => {});
+  beat();
+  onlineHeartbeatTimer = setInterval(beat, ONLINE_HOST_HEARTBEAT_MS);
 }
 
 function createOnlinePeer() {
@@ -2022,8 +2035,15 @@ function setupOnlineRelay() {
 
 function startOnlineRelayFallback() {
   if (onlineRelayFallbackTimer || onlineChannel?.readyState === 'open') return;
-  onlineRelayFallbackTimer = setTimeout(() => {
+  onlineRelayFallbackTimer = setTimeout(async () => {
     if (onlineChannel?.readyState === 'open') return;
+    if (onlineRequestedMode === 'rollback' && onlineRoomRef) {
+      const snap = await get(onlineRoomRef).catch(() => null);
+      if (!snap?.exists() || snap.val()?.status !== 'matched') {
+        setOnlineStatus('ROLLBACK MATCHING...');
+        return;
+      }
+    }
     setupOnlineRelay();
     setOnlineStatus('CONNECTED (RELAY)');
     if (onlineRequestedMode === 'rollback') enterRollbackCharSelectAfterMatch();
@@ -2630,7 +2650,7 @@ async function startOnlineMatchmaking(requestedMode = 'online') {
   onlineRequestedMode = requestedMode;
   currentBattleMode = requestedMode === 'rollback' ? 'rollback' : 'online';
   setOnlineStatus(requestedMode === 'rollback' ? 'ROLLBACK MATCHING...' : 'MATCHING...');
-  const waitingRef = ref(db, `${ONLINE_DB_ROOT}/waiting`);
+  const waitingRef = ref(db, `${ONLINE_DB_ROOT}/waiting/${requestedMode}`);
   const waitingRoomId = await claimWaitingRoom(waitingRef);
 
   if (waitingRoomId) {
@@ -2685,9 +2705,11 @@ async function createOnlineRoom(db, waitingRef) {
   await onlinePeer.setLocalDescription(offer);
   await set(onlineRoomRef, {
     status: 'waiting',
+    mode: onlineRequestedMode,
     offer: { type: offer.type, sdp: offer.sdp },
     createdAt: serverTimestamp(),
     createdAtMs: Date.now(),
+    hostSeenAt: Date.now(),
     relay: null,
   });
   const publishedRoomId = await publishWaitingRoom(waitingRef, onlineRoomId);
@@ -2706,10 +2728,13 @@ async function createOnlineRoom(db, waitingRef) {
     return;
   }
   onDisconnect(onlineRoomRef).remove();
+  startOnlineHostHeartbeat();
   setOnlineStatus('WAITING FOR PLAYER...');
 
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/answer`), async snap => {
     if (!snap.exists() || onlinePeer.currentRemoteDescription) return;
+    if (onlineHeartbeatTimer) clearInterval(onlineHeartbeatTimer);
+    onlineHeartbeatTimer = null;
     await onlinePeer.setRemoteDescription(snap.val());
     startOnlineRelayFallback();
   });
@@ -2733,7 +2758,16 @@ async function joinOnlineRoom(db, roomId) {
     setOnlineStatus('別のマッチを探しています...');
     return false;
   }
+  if ((room.mode || 'online') !== onlineRequestedMode) {
+    setOnlineStatus('別のマッチを探しています...');
+    return false;
+  }
   if (room.createdAtMs && Date.now() - room.createdAtMs > ONLINE_WAITING_TTL_MS) {
+    await update(onlineRoomRef, { status: 'closed' }).catch(() => {});
+    setOnlineStatus('古いマッチをスキップしました');
+    return false;
+  }
+  if (!room.hostSeenAt || Date.now() - room.hostSeenAt > ONLINE_HOST_STALE_MS) {
     await update(onlineRoomRef, { status: 'closed' }).catch(() => {});
     setOnlineStatus('古いマッチをスキップしました');
     return false;
