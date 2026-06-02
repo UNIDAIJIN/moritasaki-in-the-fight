@@ -1532,6 +1532,8 @@ let onlineLocalPlayerId = 1;
 let onlinePeer = null;
 let onlineChannel = null;
 let onlineStarted = false;
+let onlineRelayActive = false;
+let onlineRelayFallbackTimer = null;
 let onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
 
 function clearRoundIntroTimers() {
@@ -1841,6 +1843,8 @@ function getOnlineDb() {
 }
 
 function resetOnlineSession() {
+  if (onlineRelayFallbackTimer) clearTimeout(onlineRelayFallbackTimer);
+  onlineRelayFallbackTimer = null;
   try { onlineChannel?.close(); } catch (_) {}
   try { onlinePeer?.close(); } catch (_) {}
   if (onlineRoomRef && onlineRole === 'host') remove(onlineRoomRef).catch(() => {});
@@ -1851,6 +1855,7 @@ function resetOnlineSession() {
   onlinePeer = null;
   onlineChannel = null;
   onlineStarted = false;
+  onlineRelayActive = false;
   currentBattleMode = '2p';
   onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
 }
@@ -1884,34 +1889,76 @@ function createOnlinePeer() {
 function wireOnlineChannel(channel) {
   onlineChannel = channel;
   channel.onopen = () => {
+    if (onlineRelayFallbackTimer) clearTimeout(onlineRelayFallbackTimer);
+    onlineRelayFallbackTimer = null;
     setOnlineStatus('CONNECTED');
     enterOnlineCharSelect();
   };
   channel.onmessage = e => {
     let msg;
     try { msg = JSON.parse(e.data); } catch (_) { return; }
-    if (msg.type === 'input') {
-      onlineRemoteInput = msg.input || onlineRemoteInput;
-    } else if (msg.type === 'select') {
-      applyOnlineSelection(msg);
-    } else if (msg.type === 'start') {
-      p1Sel = msg.p1Sel ?? 0;
-      p2Sel = msg.p2Sel ?? 1;
-      startOnlineGame();
-    } else if (msg.type === 'matchEnd') {
-      resetOnlineSession();
-      returnToOnlineScreen('MATCH ENDED');
-    }
+    handleOnlineMessage(msg);
   };
 }
 
 function sendOnline(msg) {
-  if (!onlineChannel || onlineChannel.readyState !== 'open') return;
-  onlineChannel.send(JSON.stringify(msg));
+  if (onlineChannel?.readyState === 'open') {
+    onlineChannel.send(JSON.stringify(msg));
+    return;
+  }
+  if (!onlineRelayActive || !onlineRoomId) return;
+  const db = getOnlineDb();
+  if (!db) return;
+  const targetId = onlineLocalPlayerId === 1 ? 2 : 1;
+  set(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/relay/p${targetId}`), {
+    ...msg,
+    sentAt: Date.now(),
+    nonce: `${Date.now()}-${Math.random()}`,
+  }).catch(() => {});
+}
+
+function handleOnlineMessage(msg) {
+  if (msg.type === 'input') {
+    onlineRemoteInput = msg.input || onlineRemoteInput;
+  } else if (msg.type === 'select') {
+    applyOnlineSelection(msg);
+  } else if (msg.type === 'start') {
+    p1Sel = msg.p1Sel ?? 0;
+    p2Sel = msg.p2Sel ?? 1;
+    startOnlineGame();
+  } else if (msg.type === 'matchEnd') {
+    resetOnlineSession();
+    returnToOnlineScreen('MATCH ENDED');
+  }
+}
+
+function setupOnlineRelay() {
+  if (onlineRelayActive || !onlineRoomId) return;
+  const db = getOnlineDb();
+  if (!db) return;
+  onlineRelayActive = true;
+  onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/relay/p${onlineLocalPlayerId}`), snap => {
+    if (!snap.exists()) return;
+    handleOnlineMessage(snap.val());
+  });
+}
+
+function startOnlineRelayFallback() {
+  if (onlineRelayFallbackTimer || onlineChannel?.readyState === 'open') return;
+  onlineRelayFallbackTimer = setTimeout(() => {
+    if (onlineChannel?.readyState === 'open') return;
+    setupOnlineRelay();
+    setOnlineStatus('CONNECTED (RELAY)');
+    enterOnlineCharSelect();
+  }, 6500);
 }
 
 function enterOnlineCharSelect() {
   if (onlineStarted) return;
+  if (currentBattleMode === 'online' && gameState === 'charSelect') {
+    syncOnlineSelection();
+    return;
+  }
   currentBattleMode = 'online';
   p1Ready = false;
   p2Ready = false;
@@ -2035,6 +2082,7 @@ async function createOnlineRoom(db, waitingRef) {
     offer: { type: offer.type, sdp: offer.sdp },
     createdAt: serverTimestamp(),
     createdAtMs: Date.now(),
+    relay: null,
   });
   const publishedRoomId = await publishWaitingRoom(waitingRef, onlineRoomId);
   if (publishedRoomId !== onlineRoomId) {
@@ -2057,6 +2105,7 @@ async function createOnlineRoom(db, waitingRef) {
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/answer`), async snap => {
     if (!snap.exists() || onlinePeer.currentRemoteDescription) return;
     await onlinePeer.setRemoteDescription(snap.val());
+    startOnlineRelayFallback();
   });
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/guestCandidates`), snap => {
     snap.forEach(child => onlinePeer.addIceCandidate(child.val()).catch(() => {}));
@@ -2097,6 +2146,7 @@ async function joinOnlineRoom(db, roomId) {
     answer: { type: answer.type, sdp: answer.sdp },
   });
   setOnlineStatus('CONNECTING...');
+  startOnlineRelayFallback();
 
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/hostCandidates`), snap => {
     snap.forEach(child => onlinePeer.addIceCandidate(child.val()).catch(() => {}));
