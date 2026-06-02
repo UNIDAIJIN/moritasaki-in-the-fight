@@ -807,6 +807,7 @@ const ONLINE_FIREBASE_CONFIG = {
   appId: '1:654704893830:web:813d14a532234aa4d45607',
 };
 const ONLINE_DB_ROOT = 'kakuge-online-v1';
+const ONLINE_WAITING_TTL_MS = 90_000;
 
 const DEFAULT_STATS = { hp: 100, speed: 1.00, jump: 1.00, width: 0.34 };
 
@@ -1702,6 +1703,12 @@ function resetOnlineSession() {
   onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
 }
 
+function cleanupOnlineRoom() {
+  if (!onlineRoomRef) return;
+  if (onlineRole === 'host') remove(onlineRoomRef).catch(() => {});
+  else update(onlineRoomRef, { status: 'closed' }).catch(() => {});
+}
+
 function createOnlinePeer() {
   const pc = new RTCPeerConnection({
     iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
@@ -1709,6 +1716,7 @@ function createOnlinePeer() {
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
       setOnlineStatus('接続が切れました');
+      cleanupOnlineRoom();
     }
   };
   return pc;
@@ -1849,6 +1857,7 @@ async function createOnlineRoom(db, waitingRef) {
     status: 'waiting',
     offer: { type: offer.type, sdp: offer.sdp },
     createdAt: serverTimestamp(),
+    createdAtMs: Date.now(),
   });
   const publishedRoomId = await publishWaitingRoom(waitingRef, onlineRoomId);
   if (publishedRoomId !== onlineRoomId) {
@@ -1883,12 +1892,18 @@ async function joinOnlineRoom(db, roomId) {
   onlineRoomId = roomId;
   onlineRoomRef = ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}`);
   const roomSnap = await get(onlineRoomRef);
-  if (!roomSnap.exists() || !roomSnap.val().offer) {
+  const room = roomSnap.exists() ? roomSnap.val() : null;
+  if (!room || !room.offer) {
     setOnlineStatus('マッチが見つかりませんでした');
     return false;
   }
-  if (roomSnap.val().status !== 'waiting') {
+  if (room.status !== 'waiting') {
     setOnlineStatus('別のマッチを探しています...');
+    return false;
+  }
+  if (room.createdAtMs && Date.now() - room.createdAtMs > ONLINE_WAITING_TTL_MS) {
+    await update(onlineRoomRef, { status: 'closed' }).catch(() => {});
+    setOnlineStatus('古いマッチをスキップしました');
     return false;
   }
 
@@ -1897,7 +1912,7 @@ async function joinOnlineRoom(db, roomId) {
   onlinePeer.onicecandidate = e => {
     if (e.candidate) push(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/guestCandidates`), e.candidate.toJSON());
   };
-  await onlinePeer.setRemoteDescription(roomSnap.val().offer);
+  await onlinePeer.setRemoteDescription(room.offer);
   const answer = await onlinePeer.createAnswer();
   await onlinePeer.setLocalDescription(answer);
   await update(onlineRoomRef, {
