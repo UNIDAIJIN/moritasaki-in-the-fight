@@ -37,19 +37,52 @@
     /* ── HUD ── */
     #hud {
       position: absolute; top: 0; left: 0; width: 100%;
-      padding: 12px 20px; pointer-events: none; z-index: 10; display: none;
+      padding: 16px 22px 0; pointer-events: none; z-index: 10; display: none;
+      font-family: Arial, Helvetica, sans-serif;
     }
-    .hud-row { display: flex; align-items: center; gap: 12px; }
-    .p-name { font-size: 13px; font-weight: bold; min-width: 25px; }
-    .p1-name { color: #4af; } .p2-name { color: #f84; }
-    .hp-track { flex: 1; height: 16px; background: #111; border: 2px solid #333; border-radius: 2px; overflow: hidden; }
-    .hp-fill { height: 100%; width: 100%; transition: width 0.08s linear; }
-    .p1-hp { background: #4af; } .p2-hp { background: #f84; float: right; }
-    #timer-box { min-width: 55px; text-align: center; font-size: 26px; color: #fff; font-weight: bold; }
+    .hud-row {
+      display: grid; grid-template-columns: auto auto minmax(0, 1fr) 72px minmax(0, 1fr) auto auto;
+      align-items: center; gap: 10px;
+      filter: drop-shadow(0 4px 0 rgba(0,0,0,0.8));
+    }
+    .p-name {
+      min-width: 70px; max-width: 92px; height: 26px; display: flex; align-items: center; justify-content: center;
+      background: rgba(6,7,10,0.88); border: 2px solid rgba(255,255,255,0.24);
+      color: #fff; font-size: 11px; font-weight: 900; letter-spacing: 1px;
+      text-shadow: 2px 2px 0 #000; overflow: hidden; white-space: nowrap;
+    }
+    .p1-name { border-color: rgba(68,170,255,0.75); box-shadow: 0 0 14px rgba(68,170,255,0.28); }
+    .p2-name { border-color: rgba(255,136,68,0.75); box-shadow: 0 0 14px rgba(255,136,68,0.28); }
+    .hp-track {
+      position: relative; height: 24px; background: linear-gradient(180deg, #050506, #17191f);
+      border: 3px solid #050506; outline: 2px solid rgba(255,255,255,0.22);
+      overflow: hidden; box-shadow: inset 0 0 12px rgba(0,0,0,0.9);
+    }
+    .hp-track::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(180deg, rgba(255,255,255,0.30), rgba(255,255,255,0.04) 42%, rgba(0,0,0,0.24) 43%, rgba(0,0,0,0.35));
+      mix-blend-mode: screen; opacity: 0.45;
+    }
+    .hp-fill {
+      height: 100%; width: 100%; transition: width 0.08s linear;
+      box-shadow: inset 0 0 10px rgba(255,255,255,0.28), 0 0 14px currentColor;
+    }
+    .p1-hp { color: #45c8ff; background: linear-gradient(90deg, #1679ff, #48e0ff); }
+    .p2-hp { color: #ff8a35; background: linear-gradient(270deg, #ff4f21, #ffc247); float: right; }
+    #timer-box {
+      min-width: 72px; height: 42px; display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(180deg, #1d2028, #050506); border: 3px solid #fff;
+      color: #fff; font-size: 30px; line-height: 1; font-weight: 900; letter-spacing: 1px;
+      text-shadow: 0 0 12px rgba(255,255,255,0.5), 2px 2px 0 #000;
+      box-shadow: 0 5px 0 #000, 0 0 18px rgba(255,255,255,0.22);
+    }
     .win-dots { display: flex; gap: 5px; align-items: center; }
-    .win-dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid #555; background: transparent; }
-    .win-dot.filled-p1 { background: #4af; border-color: #4af; }
-    .win-dot.filled-p2 { background: #f84; border-color: #f84; }
+    .win-dot {
+      width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.35);
+      background: #050506; box-shadow: inset 0 0 6px rgba(0,0,0,0.9);
+    }
+    .win-dot.filled-p1 { background: #4af; border-color: #bdeeff; box-shadow: 0 0 10px rgba(68,170,255,0.9); }
+    .win-dot.filled-p2 { background: #f84; border-color: #ffd1ad; box-shadow: 0 0 10px rgba(255,136,68,0.9); }
 
     /* ── Round message ── */
     #message {
