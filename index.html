@@ -1571,6 +1571,9 @@ const ONLINE_STATE_SYNC_RELAY_INTERVAL = 0.1;
 let onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
 let rollbackWrapper = null;
 let rollbackRenderState = null;
+let rollbackMatched = false;
+let rollbackBattleReady = false;
+let rollbackCharSelectShown = false;
 
 function isRollbackBattle() {
   return currentBattleMode === 'rollback';
@@ -1904,6 +1907,9 @@ function resetOnlineSession() {
 function resetRollbackSession() {
   rollbackRenderState = null;
   rollbackWrapper = null;
+  rollbackMatched = false;
+  rollbackBattleReady = false;
+  rollbackCharSelectShown = false;
 }
 
 function cleanupOnlineRoom() {
@@ -2393,6 +2399,17 @@ function applyRollbackRenderState(state) {
   }
 }
 
+function enterRollbackCharSelectAfterMatch() {
+  if (rollbackCharSelectShown || !isRollbackBattle()) return;
+  rollbackCharSelectShown = true;
+  rollbackMatched = true;
+  setTimeout(() => {
+    if (!isRollbackBattle()) return;
+    setOnlineStatus('ROLLBACK CONNECTED');
+    showCharSelect();
+  }, 0);
+}
+
 function createRollbackBattleGameClass() {
   return class RollbackBattleGame extends window.netplayjs.Game {
     static timestep = 1000 / 60;
@@ -2405,9 +2422,23 @@ function createRollbackBattleGameClass() {
       this.winnerId = 0;
       this.p1Sel = p1Sel;
       this.p2Sel = p2Sel;
+      this.battleStarted = false;
     }
 
     tick(playerInputs) {
+      const playerCount = typeof playerInputs?.size === 'number'
+        ? playerInputs.size
+        : Object.keys(playerInputs || {}).length;
+      if (!rollbackMatched && playerCount >= 2) enterRollbackCharSelectAfterMatch();
+      if (!rollbackBattleReady) return;
+      if (!this.battleStarted) {
+        this.players = [cloneRollbackFighter(1, -3), cloneRollbackFighter(2, 3)];
+        this.timerFrames = 99 * 60;
+        this.winnerId = 0;
+        this.p1Sel = p1Sel;
+        this.p2Sel = p2Sel;
+        this.battleStarted = true;
+      }
       if (this.winnerId) return;
       const inputs = [
         { left: false, right: false, jump: false, block: false, punch: false, kick: false },
@@ -2438,6 +2469,7 @@ function createRollbackBattleGameClass() {
         winnerId: this.winnerId,
         p1Sel: this.p1Sel,
         p2Sel: this.p2Sel,
+        battleStarted: this.battleStarted,
       };
     }
 
@@ -2447,11 +2479,12 @@ function createRollbackBattleGameClass() {
       this.winnerId = value.winnerId;
       this.p1Sel = value.p1Sel ?? this.p1Sel;
       this.p2Sel = value.p2Sel ?? this.p2Sel;
+      this.battleStarted = Boolean(value.battleStarted);
     }
 
     draw(canvas) {
       rollbackRenderState = this.serialize();
-      applyRollbackRenderState(rollbackRenderState);
+      if (this.battleStarted) applyRollbackRenderState(rollbackRenderState);
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
@@ -2467,7 +2500,7 @@ function startRollbackWrapper() {
     const RollbackBattleGame = createRollbackBattleGameClass();
     rollbackWrapper = new window.netplayjs.RollbackWrapper(RollbackBattleGame);
     rollbackWrapper.start();
-    setOnlineStatus('ROLLBACK CONNECTING');
+    setOnlineStatus('ROLLBACK WAITING...');
   } catch (err) {
     console.warn(err);
     setOnlineStatus('ROLLBACK ERROR');
@@ -2502,7 +2535,12 @@ async function startRollbackBattle() {
   p2Wins = 0;
   updateWinDots();
   startBGM();
-  showCharSelect();
+  setOnlineStatus('ROLLBACK MATCHING...');
+  if (!(await waitForNetplayReady())) {
+    setOnlineStatus('NetplayJS を読み込めません');
+    return;
+  }
+  startRollbackWrapper();
 }
 
 async function startRollbackGame() {
@@ -2510,13 +2548,8 @@ async function startRollbackGame() {
   clearRoundIntroTimers();
   if (timerInterval) clearInterval(timerInterval);
   gameState = 'playing';
-  setOnlineStatus('ROLLBACK CONNECTING');
-  if (!(await waitForNetplayReady())) {
-    setOnlineStatus('NetplayJS を読み込めません');
-    return;
-  }
+  rollbackBattleReady = true;
   document.getElementById('message').style.display = 'none';
-  startRollbackWrapper();
 }
 
 async function startOnlineGame() {
