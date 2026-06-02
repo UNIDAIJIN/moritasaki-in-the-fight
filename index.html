@@ -1575,6 +1575,7 @@ let rollbackRenderState = null;
 let rollbackMatched = false;
 let rollbackBattleReady = false;
 let rollbackCharSelectShown = false;
+let rollbackSelectUnsub = null;
 
 function isRollbackBattle() {
   return currentBattleMode === 'rollback';
@@ -1907,11 +1908,13 @@ function resetOnlineSession() {
 }
 
 function resetRollbackSession() {
+  if (rollbackSelectUnsub) rollbackSelectUnsub();
   rollbackRenderState = null;
   rollbackWrapper = null;
   rollbackMatched = false;
   rollbackBattleReady = false;
   rollbackCharSelectShown = false;
+  rollbackSelectUnsub = null;
 }
 
 function cleanupOnlineRoom() {
@@ -2049,6 +2052,7 @@ function syncOnlineSelection() {
     sel: onlineLocalPlayerId === 1 ? p1Sel : p2Sel,
     ready: onlineLocalPlayerId === 1 ? p1Ready : p2Ready,
   });
+  syncRollbackSelectionToRoom();
 }
 
 function applyOnlineSelection(msg) {
@@ -2062,6 +2066,52 @@ function applyOnlineSelection(msg) {
   }
   renderCharSelect();
   checkBothReady();
+}
+
+function syncRollbackSelectionToRoom() {
+  if (!isRollbackBattle() || !onlineRoomId) return;
+  const db = getOnlineDb();
+  if (!db) return;
+  set(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/rollbackSelect/p${onlineLocalPlayerId}`), {
+    sel: onlineLocalPlayerId === 1 ? p1Sel : p2Sel,
+    ready: onlineLocalPlayerId === 1 ? p1Ready : p2Ready,
+    updatedAt: Date.now(),
+  }).catch(() => {});
+}
+
+function applyRollbackRoomSelection(snapshotValue) {
+  if (!isRollbackBattle() || onlineStarted || !snapshotValue) return;
+  if (snapshotValue.start && onlineRole !== 'host') {
+    p1Sel = snapshotValue.start.p1Sel ?? p1Sel;
+    p2Sel = snapshotValue.start.p2Sel ?? p2Sel;
+    startRollbackGame().catch(err => {
+      console.warn(err);
+      setOnlineStatus('ROLLBACK ERROR');
+    });
+    return;
+  }
+  const p1State = snapshotValue.p1;
+  const p2State = snapshotValue.p2;
+  if (p1State) {
+    p1Sel = p1State.sel ?? p1Sel;
+    p1Ready = Boolean(p1State.ready);
+  }
+  if (p2State) {
+    p2Sel = p2State.sel ?? p2Sel;
+    p2Ready = Boolean(p2State.ready);
+  }
+  renderCharSelect();
+  checkBothReady();
+}
+
+function watchRollbackSelection() {
+  if (!isRollbackBattle() || !onlineRoomId || rollbackSelectUnsub) return;
+  const db = getOnlineDb();
+  if (!db) return;
+  rollbackSelectUnsub = onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/rollbackSelect`), snap => {
+    if (!snap.exists()) return;
+    applyRollbackRoomSelection(snap.val());
+  });
 }
 
 function getLocalOnlineInput() {
@@ -2420,6 +2470,7 @@ function enterRollbackCharSelectAfterMatch() {
     p1Ready = false;
     p2Ready = false;
     showCharSelect();
+    watchRollbackSelection();
     syncOnlineSelection();
   }, 0);
 }
@@ -2965,6 +3016,7 @@ document.getElementById('cs-back-title').addEventListener('click', () => {
 });
 
 function checkBothReady() {
+  if (charSelectLocked) return;
   if (currentBattleMode === 'com' && p1Ready) {
     const cpuChoices = CHARACTERS.map((_, i) => i).filter(i => i !== p1Sel);
     p2Sel = cpuChoices[Math.floor(Math.random() * cpuChoices.length)];
@@ -2972,24 +3024,32 @@ function checkBothReady() {
     charSelectLocked = true;
     document.getElementById('cs-countdown').textContent = 'READY';
     setTimeout(loadCharacters, 250);
-  } else if (currentBattleMode === 'online' && p1Ready && p2Ready) {
-    charSelectLocked = true;
-    document.getElementById('cs-countdown').textContent = 'READY';
-    if (onlineRole === 'host') {
-      sendOnline({ type: 'start', p1Sel, p2Sel });
-      setTimeout(startOnlineGame, 250);
-    }
-  } else if (isRollbackBattle() && p1Ready && p2Ready) {
+  } else if ((isRollbackBattle() || onlineRequestedMode === 'rollback') && p1Ready && p2Ready) {
     charSelectLocked = true;
     document.getElementById('cs-countdown').textContent = 'READY';
     if (onlineRole === 'host') {
       sendOnline({ type: 'rollbackStart', p1Sel, p2Sel });
+      const db = getOnlineDb();
+      if (db && onlineRoomId) {
+        set(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/rollbackSelect/start`), {
+          p1Sel,
+          p2Sel,
+          startedAt: Date.now(),
+        }).catch(() => {});
+      }
       setTimeout(() => {
         startRollbackGame().catch(err => {
           console.warn(err);
           setOnlineStatus('ROLLBACK ERROR');
         });
       }, 250);
+    }
+  } else if (currentBattleMode === 'online' && p1Ready && p2Ready) {
+    charSelectLocked = true;
+    document.getElementById('cs-countdown').textContent = 'READY';
+    if (onlineRole === 'host') {
+      sendOnline({ type: 'start', p1Sel, p2Sel });
+      setTimeout(startOnlineGame, 250);
     }
   } else if (p1Ready && p2Ready) {
     charSelectLocked = true;
