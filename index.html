@@ -785,6 +785,8 @@ const MOVE_DEFS = {
     blockPush: 1.2,
     selfSlide: 0,
     cameraShake: 0.10,
+    hitStop: 0.055,
+    blockStop: 0.035,
     voice: true,
   },
   heavy: {
@@ -793,16 +795,18 @@ const MOVE_DEFS = {
     chip: 3,
     startup: 0.22,
     active: 0.12,
-    recovery: 0.38,
-    hitstun: 0.46,
-    blockstun: 0.24,
-    range: 1.12,
+    recovery: 0.44,
+    hitstun: 0.54,
+    blockstun: 0.30,
+    range: 1.18,
     heightMin: 0.22,
     heightMax: 1.62,
-    knockback: 4.8,
-    blockPush: 2.0,
+    knockback: 5.8,
+    blockPush: 2.5,
     selfSlide: 0.35,
     cameraShake: 0.22,
+    hitStop: 0.085,
+    blockStop: 0.055,
     voice: true,
   },
 };
@@ -1303,9 +1307,10 @@ class Player {
     const punchPressed = inp.punch && !this.prevPunch;
     const kickPressed = inp.kick && !this.prevKick;
     if (this.state === 'hitstun') {
+      this.vx *= 0.94;
       if (this.stateTime <= 0) this.state = 'idle';
     } else if (this.state === 'blockstun') {
-      this.vx *= 0.88;
+      this.vx *= 0.90;
       if (this.stateTime <= 0) this.state = 'idle';
     } else if (this.state === 'punch' || this.state === 'kick') {
       if (!this.grounded) {
@@ -1471,6 +1476,10 @@ function clearRoundIntroTimers() {
 function clearRoundEndTimers() {
   roundEndTimers.forEach(id => clearTimeout(id));
   roundEndTimers = [];
+}
+
+function clearHitStop() {
+  hitStopTimer = 0;
 }
 
 function updateWinDots() {
@@ -2395,6 +2404,7 @@ function initGame(model1, model2) {
 function startRound() {
   clearRoundIntroTimers();
   clearRoundEndTimers();
+  clearHitStop();
   roundTimer = 99;
   document.getElementById('timer-box').textContent = roundTimer;
   document.getElementById('timer-box').style.color = '#fff';
@@ -2425,6 +2435,7 @@ function startRound() {
 function endRound(winnerId = null) {
   clearRoundIntroTimers();
   clearRoundEndTimers();
+  clearHitStop();
   gameState = 'roundEnd';
   if (timerInterval) clearInterval(timerInterval);
 
@@ -2498,6 +2509,8 @@ function checkCombat() {
   resolveAttack(p2, p1);
 }
 
+let hitStopTimer = 0;
+
 function resolveAttack(atk, def) {
   const tip  = atk.getAttackTip(); if (!tip) return;
   const body = def.getBounds();
@@ -2509,6 +2522,7 @@ function resolveAttack(atk, def) {
   const result = def.receiveAttack(tip.move, atk.facingDir);
   if (result !== 'none') {
     atk.hasHit = true;
+    hitStopTimer = Math.max(hitStopTimer, result === 'blocked' ? (tip.move.blockStop || 0.035) : (tip.move.hitStop || 0.06));
     cameraShakeAmt = result === 'blocked' ? tip.move.cameraShake * 0.45 : tip.move.cameraShake;
     if (result === 'hit') {
       atk.combo++;
@@ -2559,14 +2573,19 @@ function animate() {
   requestAnimationFrame(animate);
   const frameDt = Math.min(clock.getDelta(), 0.08);
   if (gameState === 'playing') {
-    accumulator = Math.min(accumulator + frameDt, FIXED_DT * 5);
-    while (accumulator >= FIXED_DT) {
-      syncOnlineInput();
-      updateComBrain(FIXED_DT);
-      p1.update(FIXED_DT, p2); p2.update(FIXED_DT, p1);
-      separatePlayers();
-      checkCombat();
-      accumulator -= FIXED_DT;
+    if (hitStopTimer > 0) {
+      hitStopTimer = Math.max(0, hitStopTimer - frameDt);
+      accumulator = 0;
+    } else {
+      accumulator = Math.min(accumulator + frameDt, FIXED_DT * 5);
+      while (accumulator >= FIXED_DT) {
+        syncOnlineInput();
+        updateComBrain(FIXED_DT);
+        p1.update(FIXED_DT, p2); p2.update(FIXED_DT, p1);
+        separatePlayers();
+        checkCombat();
+        accumulator -= FIXED_DT;
+      }
     }
   } else {
     accumulator = 0;
