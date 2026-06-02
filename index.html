@@ -1577,6 +1577,7 @@ let rollbackRenderState = null;
 let rollbackMatched = false;
 let rollbackBattleReady = false;
 let rollbackCharSelectShown = false;
+let rollbackInputMode = false;
 let rollbackSelectUnsub = null;
 
 function isRollbackBattle() {
@@ -1918,6 +1919,7 @@ function resetRollbackSession() {
   rollbackMatched = false;
   rollbackBattleReady = false;
   rollbackCharSelectShown = false;
+  rollbackInputMode = false;
   rollbackSelectUnsub = null;
 }
 
@@ -2188,6 +2190,7 @@ function applyPlayerState(player, state) {
 }
 
 function syncOnlineState(dt) {
+  if (rollbackInputMode) return;
   if (currentBattleMode !== 'online' || !onlineStarted || !isOnlineHost() || !p1 || !p2) return;
   onlineStateSyncTimer -= dt;
   if (onlineStateSyncTimer > 0) return;
@@ -2211,6 +2214,7 @@ function updateOnlineGuestRender(dt) {
 }
 
 function applyOnlineState(msg) {
+  if (rollbackInputMode) return;
   if (!isOnlineGuest() || !onlineStarted || !p1 || !p2) return;
   applyPlayerState(p1, msg.p1);
   applyPlayerState(p2, msg.p2);
@@ -2624,6 +2628,7 @@ async function startRollbackBattle() {
 
 async function startRollbackGame() {
   rollbackBattleReady = true;
+  rollbackInputMode = true;
   currentBattleMode = 'online';
   await startOnlineGame();
 }
@@ -3216,14 +3221,14 @@ function startRound() {
       if (roundTimer <= 10) document.getElementById('timer-box').style.color = '#f44';
       if (roundTimer <= 0) {
         clearInterval(timerInterval);
-        if (!isOnlineGuest()) endRound();
+        if (!isOnlineGuest() || rollbackInputMode) endRound();
       }
     }, 1000);
   }, 1500));
 }
 
 function endRound(winnerId = null, fromRemote = false) {
-  if (isOnlineGuest() && !fromRemote) return;
+  if (isOnlineGuest() && !fromRemote && !rollbackInputMode) return;
   clearRoundIntroTimers();
   clearRoundEndTimers();
   clearHitStop();
@@ -3240,7 +3245,7 @@ function endRound(winnerId = null, fromRemote = false) {
   else if (roundWinner === 2) p2Wins++;
   updateWinDots();
 
-  if (isOnlineHost() && !fromRemote) {
+  if (isOnlineHost() && !fromRemote && !rollbackInputMode) {
     sendOnline({ type: 'roundEnd', winnerId: roundWinner });
   }
 
@@ -3253,7 +3258,7 @@ function endRound(winnerId = null, fromRemote = false) {
     el.style.display = 'block';
     roundEndTimers.push(setTimeout(() => {
       if (currentBattleMode === 'online') {
-        sendOnline({ type: 'matchEnd' });
+        if (!rollbackInputMode || onlineRole === 'host') sendOnline({ type: 'matchEnd' });
         resetOnlineSession();
         returnToOnlineScreen('MATCH ENDED');
         return;
@@ -3333,7 +3338,7 @@ function resolveAttack(atk, def) {
     if (def.hp <= 0) {
       clearInterval(timerInterval);
       timerInterval = null;
-      if (!isOnlineGuest()) {
+      if (!isOnlineGuest() || rollbackInputMode) {
         roundEndTimers.push(setTimeout(() => endRound(atk.id), 1300));
       }
     }
@@ -3379,13 +3384,13 @@ function animate() {
     if (hitStopTimer > 0) {
       hitStopTimer = Math.max(0, hitStopTimer - frameDt);
       accumulator = 0;
-      updateOnlineGuestRender(frameDt);
+      if (!rollbackInputMode) updateOnlineGuestRender(frameDt);
     } else if (isRollbackBattle()) {
       if (p1?.mixer) p1.mixer.update(frameDt);
       if (p2?.mixer) p2.mixer.update(frameDt);
       if (rollbackRenderState) applyRollbackRenderState(rollbackRenderState);
       accumulator = 0;
-    } else if (isOnlineGuest()) {
+    } else if (isOnlineGuest() && !rollbackInputMode) {
       syncOnlineInput();
       updateOnlineGuestRender(frameDt);
       accumulator = 0;
