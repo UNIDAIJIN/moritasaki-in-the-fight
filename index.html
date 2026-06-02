@@ -1563,6 +1563,7 @@ let onlineLocalPlayerId = 1;
 let onlinePeer = null;
 let onlineChannel = null;
 let onlineStarted = false;
+let onlineRequestedMode = 'online';
 let onlineRelayActive = false;
 let onlineRelayFallbackTimer = null;
 let onlineStateSyncTimer = 0;
@@ -1898,6 +1899,7 @@ function resetOnlineSession() {
   onlinePeer = null;
   onlineChannel = null;
   onlineStarted = false;
+  onlineRequestedMode = 'online';
   onlineRelayActive = false;
   onlineStateSyncTimer = 0;
   currentBattleMode = '2p';
@@ -1944,7 +1946,8 @@ function wireOnlineChannel(channel) {
     if (onlineRelayFallbackTimer) clearTimeout(onlineRelayFallbackTimer);
     onlineRelayFallbackTimer = null;
     setOnlineStatus('CONNECTED');
-    enterOnlineCharSelect();
+    if (onlineRequestedMode === 'rollback') enterRollbackCharSelectAfterMatch();
+    else enterOnlineCharSelect();
   };
   channel.onmessage = e => {
     let msg;
@@ -1978,6 +1981,13 @@ function handleOnlineMessage(msg) {
     p1Sel = msg.p1Sel ?? 0;
     p2Sel = msg.p2Sel ?? 1;
     startOnlineGame();
+  } else if (msg.type === 'rollbackStart') {
+    p1Sel = msg.p1Sel ?? p1Sel;
+    p2Sel = msg.p2Sel ?? p2Sel;
+    startRollbackGame().catch(err => {
+      console.warn(err);
+      setOnlineStatus('ROLLBACK ERROR');
+    });
   } else if (msg.type === 'state') {
     applyOnlineState(msg);
   } else if (msg.type === 'roundEnd') {
@@ -2013,7 +2023,8 @@ function startOnlineRelayFallback() {
     if (onlineChannel?.readyState === 'open') return;
     setupOnlineRelay();
     setOnlineStatus('CONNECTED (RELAY)');
-    enterOnlineCharSelect();
+    if (onlineRequestedMode === 'rollback') enterRollbackCharSelectAfterMatch();
+    else enterOnlineCharSelect();
   }, 6500);
 }
 
@@ -2031,7 +2042,7 @@ function enterOnlineCharSelect() {
 }
 
 function syncOnlineSelection() {
-  if (currentBattleMode !== 'online') return;
+  if (currentBattleMode !== 'online' && !isRollbackBattle()) return;
   sendOnline({
     type: 'select',
     playerId: onlineLocalPlayerId,
@@ -2041,7 +2052,7 @@ function syncOnlineSelection() {
 }
 
 function applyOnlineSelection(msg) {
-  if (currentBattleMode !== 'online' || onlineStarted) return;
+  if ((currentBattleMode !== 'online' && !isRollbackBattle()) || onlineStarted) return;
   if (msg.playerId === 1) {
     p1Sel = msg.sel ?? p1Sel;
     p1Ready = Boolean(msg.ready);
@@ -2406,7 +2417,10 @@ function enterRollbackCharSelectAfterMatch() {
   setTimeout(() => {
     if (!isRollbackBattle()) return;
     setOnlineStatus('ROLLBACK CONNECTED');
+    p1Ready = false;
+    p2Ready = false;
     showCharSelect();
+    syncOnlineSelection();
   }, 0);
 }
 
@@ -2528,7 +2542,6 @@ function waitForNetplayReady(timeoutMs = 8000) {
 
 async function startRollbackBattle() {
   if (gameState !== 'online') return;
-  resetOnlineSession();
   resetRollbackSession();
   currentBattleMode = 'rollback';
   p1Wins = 0;
@@ -2536,20 +2549,13 @@ async function startRollbackBattle() {
   updateWinDots();
   startBGM();
   setOnlineStatus('ROLLBACK MATCHING...');
-  if (!(await waitForNetplayReady())) {
-    setOnlineStatus('NetplayJS を読み込めません');
-    return;
-  }
-  startRollbackWrapper();
+  await startOnlineMatchmaking('rollback');
 }
 
 async function startRollbackGame() {
-  await loadCharacters();
-  clearRoundIntroTimers();
-  if (timerInterval) clearInterval(timerInterval);
-  gameState = 'playing';
   rollbackBattleReady = true;
-  document.getElementById('message').style.display = 'none';
+  currentBattleMode = 'online';
+  await startOnlineGame();
 }
 
 async function startOnlineGame() {
@@ -2562,7 +2568,7 @@ async function startOnlineGame() {
   await loadCharacters();
 }
 
-async function startOnlineMatchmaking() {
+async function startOnlineMatchmaking(requestedMode = 'online') {
   const db = getOnlineDb();
   if (!db) {
     setOnlineStatus('Firebase設定が未入力です。ONLINE_FIREBASE_CONFIG を入れてください。');
@@ -2570,7 +2576,9 @@ async function startOnlineMatchmaking() {
   }
 
   resetOnlineSession();
-  setOnlineStatus('MATCHING...');
+  onlineRequestedMode = requestedMode;
+  currentBattleMode = requestedMode === 'rollback' ? 'rollback' : 'online';
+  setOnlineStatus(requestedMode === 'rollback' ? 'ROLLBACK MATCHING...' : 'MATCHING...');
   const waitingRef = ref(db, `${ONLINE_DB_ROOT}/waiting`);
   const waitingRoomId = await claimWaitingRoom(waitingRef);
 
@@ -2758,8 +2766,7 @@ function renderCharSelect() {
   const p1Status = document.getElementById('cs-p1-status');
   const p2Status = document.getElementById('cs-p2-status');
   const isComMode = currentBattleMode === 'com';
-  const isOnlineMode = currentBattleMode === 'online';
-  const isRollbackMode = isRollbackBattle();
+  const isOnlineMode = currentBattleMode === 'online' || isRollbackBattle();
   container.innerHTML = '';
   const p1OnTitle = p1CharFocus === 'title';
   const p2OnTitle = !isComMode && p2CharFocus === 'title';
@@ -2773,9 +2780,6 @@ function renderCharSelect() {
     p2Status.textContent = onlineLocalPlayerId === 2
       ? 'YOU: A / D 選択   Q 決定'
       : 'P2: 相手の選択待ち';
-  } else if (isRollbackMode) {
-    p1Status.textContent = 'P1: A / D 選択   W / S 上下   Q 決定';
-    p2Status.textContent = 'P2: ← / → 選択   ↑ / ↓ 上下   , 決定';
   } else {
     p1Status.textContent = 'P1: A / D 選択   W / S 上下   Q 決定';
     p2Status.textContent = 'P2: ← / → 選択   ↑ / ↓ 上下   , 決定';
@@ -2841,7 +2845,7 @@ function handleCharSelectKey(code) {
   if (gameState !== 'charSelect') return;
   if (charSelectLocked) return;
   const isComMode = currentBattleMode === 'com';
-  const isOnlineMode = currentBattleMode === 'online';
+  const isOnlineMode = currentBattleMode === 'online' || isRollbackBattle();
 
   if (isOnlineMode) {
     const localIsP1 = onlineLocalPlayerId === 1;
@@ -2978,12 +2982,15 @@ function checkBothReady() {
   } else if (isRollbackBattle() && p1Ready && p2Ready) {
     charSelectLocked = true;
     document.getElementById('cs-countdown').textContent = 'READY';
-    setTimeout(() => {
-      startRollbackGame().catch(err => {
-        console.warn(err);
-        setOnlineStatus('ROLLBACK ERROR');
-      });
-    }, 250);
+    if (onlineRole === 'host') {
+      sendOnline({ type: 'rollbackStart', p1Sel, p2Sel });
+      setTimeout(() => {
+        startRollbackGame().catch(err => {
+          console.warn(err);
+          setOnlineStatus('ROLLBACK ERROR');
+        });
+      }, 250);
+    }
   } else if (p1Ready && p2Ready) {
     charSelectLocked = true;
     document.getElementById('cs-countdown').textContent = 'READY';
