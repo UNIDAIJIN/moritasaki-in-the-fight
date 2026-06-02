@@ -461,8 +461,7 @@
   <div class="online-title">ONLINE BATTLE</div>
   <div id="online-status">READY</div>
   <div class="online-actions">
-    <button id="online-rollback" type="button">TEST MATCH</button>
-    <button id="online-match" type="button">STABLE MATCH</button>
+    <button id="online-match" type="button">ROLLBACK MATCH</button>
     <button id="online-back" type="button">BACK</button>
   </div>
 </div>
@@ -1735,11 +1734,11 @@ function showOnlineScreen() {
   document.body.classList.remove('mobile-controls-active');
   onlineActionIndex = 0;
   renderOnlineActions();
-  setOnlineStatus('STABLE MATCH を押してください');
+  setOnlineStatus('ROLLBACK MATCH を押してください');
   gameState = 'online';
 }
 
-function returnToOnlineScreen(statusText = 'STABLE MATCH を押してください') {
+function returnToOnlineScreen(statusText = 'ROLLBACK MATCH を押してください') {
   clearRoundIntroTimers();
   clearRoundEndTimers();
   if (timerInterval) clearInterval(timerInterval);
@@ -1808,7 +1807,7 @@ document.getElementById('title-screen').addEventListener('pointerdown', e => {
 });
 
 let onlineActionIndex = 0;
-const ONLINE_ACTION_IDS = ['online-rollback', 'online-match', 'online-back'];
+const ONLINE_ACTION_IDS = ['online-match', 'online-back'];
 
 function renderOnlineActions() {
   ONLINE_ACTION_IDS.forEach((id, i) => {
@@ -2002,7 +2001,7 @@ function handleOnlineMessage(msg) {
     p2Sel = msg.p2Sel ?? p2Sel;
     startRollbackGame().catch(err => {
       console.warn(err);
-      setOnlineStatus('TEST ERROR');
+      setOnlineStatus('ROLLBACK ERROR');
     });
   } else if (msg.type === 'state') {
     applyOnlineState(msg);
@@ -2040,7 +2039,7 @@ function startOnlineRelayFallback() {
     if (onlineRequestedMode === 'rollback' && onlineRoomRef) {
       const snap = await get(onlineRoomRef).catch(() => null);
       if (!snap?.exists() || snap.val()?.status !== 'matched') {
-        setOnlineStatus('TEST MATCHING...');
+        setOnlineStatus('ROLLBACK MATCHING...');
         return;
       }
     }
@@ -2106,7 +2105,7 @@ function applyRollbackRoomSelection(snapshotValue) {
     p2Sel = snapshotValue.start.p2Sel ?? p2Sel;
     startRollbackGame().catch(err => {
       console.warn(err);
-      setOnlineStatus('TEST ERROR');
+      setOnlineStatus('ROLLBACK ERROR');
     });
     return;
   }
@@ -2486,7 +2485,7 @@ function enterRollbackCharSelectAfterMatch() {
   rollbackMatched = true;
   setTimeout(() => {
     if (!isRollbackBattle()) return;
-    setOnlineStatus('TEST CONNECTED');
+    setOnlineStatus('ROLLBACK CONNECTED');
     p1Ready = false;
     p2Ready = false;
     showCharSelect();
@@ -2585,10 +2584,10 @@ function startRollbackWrapper() {
     const RollbackBattleGame = createRollbackBattleGameClass();
     rollbackWrapper = new window.netplayjs.RollbackWrapper(RollbackBattleGame);
     rollbackWrapper.start();
-    setOnlineStatus('TEST WAITING...');
+    setOnlineStatus('ROLLBACK WAITING...');
   } catch (err) {
     console.warn(err);
-    setOnlineStatus('TEST ERROR');
+    setOnlineStatus('ROLLBACK ERROR');
   }
 }
 
@@ -2619,7 +2618,7 @@ async function startRollbackBattle() {
   p2Wins = 0;
   updateWinDots();
   startBGM();
-  setOnlineStatus('TEST MATCHING...');
+  setOnlineStatus('ROLLBACK MATCHING...');
   await startOnlineMatchmaking('rollback');
 }
 
@@ -2649,7 +2648,7 @@ async function startOnlineMatchmaking(requestedMode = 'online') {
   resetOnlineSession();
   onlineRequestedMode = requestedMode;
   currentBattleMode = requestedMode === 'rollback' ? 'rollback' : 'online';
-  setOnlineStatus(requestedMode === 'rollback' ? 'TEST MATCHING...' : 'MATCHING...');
+  setOnlineStatus(requestedMode === 'rollback' ? 'ROLLBACK MATCHING...' : 'MATCHING...');
   const waitingRef = ref(db, `${ONLINE_DB_ROOT}/waiting/${requestedMode}`);
   const waitingRoomId = await claimWaitingRoom(waitingRef);
 
@@ -2794,21 +2793,13 @@ async function joinOnlineRoom(db, roomId) {
   return true;
 }
 
-document.getElementById('online-rollback').addEventListener('click', () => {
+document.getElementById('online-match').addEventListener('click', () => {
   onlineActionIndex = 0;
   renderOnlineActions();
+  startBGM();
   startRollbackBattle().catch(err => {
     console.warn(err);
-    setOnlineStatus('TEST ERROR');
-  });
-});
-document.getElementById('online-match').addEventListener('click', () => {
-  onlineActionIndex = 1;
-  renderOnlineActions();
-  startBGM();
-  startOnlineMatchmaking().catch(err => {
-    console.warn(err);
-    setOnlineStatus('ONLINE ERROR');
+    setOnlineStatus('ROLLBACK ERROR');
   });
 });
 document.getElementById('online-back').addEventListener('click', () => {
@@ -3074,7 +3065,7 @@ function checkBothReady() {
       setTimeout(() => {
         startRollbackGame().catch(err => {
           console.warn(err);
-          setOnlineStatus('TEST ERROR');
+          setOnlineStatus('ROLLBACK ERROR');
         });
       }, 250);
     }
