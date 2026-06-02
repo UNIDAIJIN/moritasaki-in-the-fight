@@ -1398,7 +1398,7 @@ class Player {
   _sync3D() {
     const obj = this.model || this.placeholder;
     if (!obj) return;
-    const animYOffset = this.state === 'punch' ? -0.08 : 0;
+    const animYOffset = this.state === 'punch' ? -0.14 : 0;
     obj.position.set(this.x, this.y + this.modelYOffset + animYOffset, 0);
     obj.rotation.y = MODEL_ROT_OFFSET + (this.facingDir > 0 ? Math.PI / 2 : -Math.PI / 2);
 
