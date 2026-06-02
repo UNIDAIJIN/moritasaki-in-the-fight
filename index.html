@@ -1718,18 +1718,15 @@ function wireOnlineChannel(channel) {
   onlineChannel = channel;
   channel.onopen = () => {
     setOnlineStatus('CONNECTED');
-    if (onlineRole === 'host' && !onlineStarted) {
-      p1Sel = 0;
-      p2Sel = 1;
-      sendOnline({ type: 'start', p1Sel, p2Sel });
-      startOnlineGame();
-    }
+    enterOnlineCharSelect();
   };
   channel.onmessage = e => {
     let msg;
     try { msg = JSON.parse(e.data); } catch (_) { return; }
     if (msg.type === 'input') {
       onlineRemoteInput = msg.input || onlineRemoteInput;
+    } else if (msg.type === 'select') {
+      applyOnlineSelection(msg);
     } else if (msg.type === 'start') {
       p1Sel = msg.p1Sel ?? 0;
       p2Sel = msg.p2Sel ?? 1;
@@ -1741,6 +1738,38 @@ function wireOnlineChannel(channel) {
 function sendOnline(msg) {
   if (!onlineChannel || onlineChannel.readyState !== 'open') return;
   onlineChannel.send(JSON.stringify(msg));
+}
+
+function enterOnlineCharSelect() {
+  if (onlineStarted) return;
+  currentBattleMode = 'online';
+  p1Ready = false;
+  p2Ready = false;
+  showCharSelect();
+  syncOnlineSelection();
+}
+
+function syncOnlineSelection() {
+  if (currentBattleMode !== 'online') return;
+  sendOnline({
+    type: 'select',
+    playerId: onlineLocalPlayerId,
+    sel: onlineLocalPlayerId === 1 ? p1Sel : p2Sel,
+    ready: onlineLocalPlayerId === 1 ? p1Ready : p2Ready,
+  });
+}
+
+function applyOnlineSelection(msg) {
+  if (currentBattleMode !== 'online' || onlineStarted) return;
+  if (msg.playerId === 1) {
+    p1Sel = msg.sel ?? p1Sel;
+    p1Ready = Boolean(msg.ready);
+  } else if (msg.playerId === 2) {
+    p2Sel = msg.sel ?? p2Sel;
+    p2Ready = Boolean(msg.ready);
+  }
+  renderCharSelect();
+  checkBothReady();
 }
 
 function getLocalOnlineInput() {
@@ -1882,7 +1911,7 @@ function showCharSelect() {
   p1CharFocus = 'characters';
   p2CharFocus = 'characters';
   p1Ready = false;
-  p2Ready = currentBattleMode === 'com' || currentBattleMode === 'online';
+  p2Ready = currentBattleMode === 'com';
   gameState = 'charSelect';
   renderCharSelect();
 }
@@ -1892,16 +1921,25 @@ function renderCharSelect() {
   const backTitle = document.getElementById('cs-back-title');
   const p1Status = document.getElementById('cs-p1-status');
   const p2Status = document.getElementById('cs-p2-status');
-  const isComMode = currentBattleMode === 'com' || currentBattleMode === 'online';
+  const isComMode = currentBattleMode === 'com';
+  const isOnlineMode = currentBattleMode === 'online';
   container.innerHTML = '';
   const p1OnTitle = p1CharFocus === 'title';
   const p2OnTitle = !isComMode && p2CharFocus === 'title';
   backTitle.classList.toggle('active', p1OnTitle || p2OnTitle);
   backTitle.classList.toggle('p1-active', p1OnTitle);
   backTitle.classList.toggle('p2-active', p2OnTitle);
-  p1Status.textContent = isComMode
-    ? 'P1: A / D 選択   W / S 上下   Q 決定'
-    : 'P1: A / D 選択   W / S 上下   Q 決定';
+  if (isOnlineMode) {
+    p1Status.textContent = onlineLocalPlayerId === 1
+      ? 'YOU: A / D 選択   Q 決定'
+      : 'P1: 相手の選択待ち';
+    p2Status.textContent = onlineLocalPlayerId === 2
+      ? 'YOU: A / D 選択   Q 決定'
+      : 'P2: 相手の選択待ち';
+  } else {
+    p1Status.textContent = 'P1: A / D 選択   W / S 上下   Q 決定';
+    p2Status.textContent = 'P2: ← / → 選択   ↑ / ↓ 上下   , 決定';
+  }
   p2Status.style.display = isComMode ? 'none' : '';
   CHARACTERS.forEach((ch, i) => {
     const card = document.createElement('div');
@@ -1962,6 +2000,58 @@ function handleCharSelectKey(code) {
   if (gameState !== 'charSelect') return;
   if (charSelectLocked) return;
   const isComMode = currentBattleMode === 'com';
+  const isOnlineMode = currentBattleMode === 'online';
+
+  if (isOnlineMode) {
+    const localIsP1 = onlineLocalPlayerId === 1;
+    const localFocus = localIsP1 ? p1CharFocus : p2CharFocus;
+    const localReady = localIsP1 ? p1Ready : p2Ready;
+    if (code === 'KeyS') {
+      if (localIsP1) p1CharFocus = 'title';
+      else p2CharFocus = 'title';
+      renderCharSelect();
+      playSE('se_cursor.mp3');
+      return;
+    }
+    if (code === 'KeyW') {
+      if (localIsP1) p1CharFocus = 'characters';
+      else p2CharFocus = 'characters';
+      renderCharSelect();
+      playSE('se_cursor.mp3');
+      return;
+    }
+    if ((code === 'KeyQ' || code === 'Enter' || code === 'Space') && localFocus === 'title') {
+      resetOnlineSession();
+      returnFromCharSelectToTitle();
+      return;
+    }
+    if (localFocus === 'characters' && code === 'KeyA' && !localReady) {
+      if (localIsP1) p1Sel = (p1Sel + CHARACTERS.length - 1) % CHARACTERS.length;
+      else p2Sel = (p2Sel + CHARACTERS.length - 1) % CHARACTERS.length;
+      renderCharSelect();
+      syncOnlineSelection();
+      playSE('se_cursor.mp3');
+      return;
+    }
+    if (localFocus === 'characters' && code === 'KeyD' && !localReady) {
+      if (localIsP1) p1Sel = (p1Sel + 1) % CHARACTERS.length;
+      else p2Sel = (p2Sel + 1) % CHARACTERS.length;
+      renderCharSelect();
+      syncOnlineSelection();
+      playSE('se_cursor.mp3');
+      return;
+    }
+    if (localFocus === 'characters' && code === 'KeyQ') {
+      if (localIsP1) p1Ready = !p1Ready;
+      else p2Ready = !p2Ready;
+      renderCharSelect();
+      syncOnlineSelection();
+      checkBothReady();
+      playSE('se_confirm.mp3');
+      return;
+    }
+    return;
+  }
 
   if (code === 'KeyS') {
     if (p1CharFocus !== 'title') {
@@ -2037,6 +2127,13 @@ function checkBothReady() {
     charSelectLocked = true;
     document.getElementById('cs-countdown').textContent = 'READY';
     setTimeout(loadCharacters, 250);
+  } else if (currentBattleMode === 'online' && p1Ready && p2Ready) {
+    charSelectLocked = true;
+    document.getElementById('cs-countdown').textContent = 'READY';
+    if (onlineRole === 'host') {
+      sendOnline({ type: 'start', p1Sel, p2Sel });
+      setTimeout(startOnlineGame, 250);
+    }
   } else if (p1Ready && p2Ready) {
     charSelectLocked = true;
     document.getElementById('cs-countdown').textContent = 'READY';
