@@ -1926,10 +1926,20 @@ function handleOnlineMessage(msg) {
     p1Sel = msg.p1Sel ?? 0;
     p2Sel = msg.p2Sel ?? 1;
     startOnlineGame();
+  } else if (msg.type === 'roundEnd') {
+    endRound(msg.winnerId ?? null, true);
   } else if (msg.type === 'matchEnd') {
     resetOnlineSession();
     returnToOnlineScreen('MATCH ENDED');
   }
+}
+
+function isOnlineGuest() {
+  return currentBattleMode === 'online' && onlineRole === 'guest';
+}
+
+function isOnlineHost() {
+  return currentBattleMode === 'online' && onlineRole === 'host';
 }
 
 function setupOnlineRelay() {
@@ -2551,12 +2561,16 @@ function startRound() {
       roundTimer--;
       document.getElementById('timer-box').textContent = roundTimer;
       if (roundTimer <= 10) document.getElementById('timer-box').style.color = '#f44';
-      if (roundTimer <= 0) { clearInterval(timerInterval); endRound(); }
+      if (roundTimer <= 0) {
+        clearInterval(timerInterval);
+        if (!isOnlineGuest()) endRound();
+      }
     }, 1000);
   }, 1500));
 }
 
-function endRound(winnerId = null) {
+function endRound(winnerId = null, fromRemote = false) {
+  if (isOnlineGuest() && !fromRemote) return;
   clearRoundIntroTimers();
   clearRoundEndTimers();
   clearHitStop();
@@ -2572,6 +2586,10 @@ function endRound(winnerId = null) {
   if (roundWinner === 1) p1Wins++;
   else if (roundWinner === 2) p2Wins++;
   updateWinDots();
+
+  if (isOnlineHost() && !fromRemote) {
+    sendOnline({ type: 'roundEnd', winnerId: roundWinner });
+  }
 
   const el = document.getElementById('message');
   const matchOver = p1Wins >= WINS_TO_WIN || p2Wins >= WINS_TO_WIN;
@@ -2662,7 +2680,9 @@ function resolveAttack(atk, def) {
     if (def.hp <= 0) {
       clearInterval(timerInterval);
       timerInterval = null;
-      roundEndTimers.push(setTimeout(() => endRound(atk.id), 1300));
+      if (!isOnlineGuest()) {
+        roundEndTimers.push(setTimeout(() => endRound(atk.id), 1300));
+      }
     }
   }
 }
