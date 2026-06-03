@@ -528,7 +528,7 @@
   <div class="credits-list">
     <div class="credits-row"><div class="credits-role">GAME TITLE</div><div class="credits-name">MoritaSaki in the Fight</div></div>
     <div class="credits-row"><div class="credits-role">DEVELOPMENT</div><div class="credits-name">NIDHOGG GAMES</div></div>
-    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.6.1</div></div>
+    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.6.2</div></div>
     <div class="credits-row"><div class="credits-role">PROGRAMMING</div><div class="credits-name">RIKU ISHIHARA</div></div>
     <div class="credits-row"><div class="credits-role">3D</div><div class="credits-name">RIKU ISHIHARA, YUI YAHIRO</div></div>
     <div class="credits-row"><div class="credits-role">MUSIC</div><div class="credits-name">NASUMI HEIKE</div></div>
@@ -567,7 +567,7 @@
 <div id="combo-p2"></div>
 <div id="guest-controller-screen">通信中<span>HOSTの画面を見ながら操作</span></div>
 <button id="victory-next" type="button" disabled>NEXT</button>
-<div id="version-label">v0.6.1</div>
+<div id="version-label">v0.6.2</div>
 
 <div id="controls-guide">
   P1: [A/D] 移動 &nbsp; [W] ジャンプ &nbsp; [S] ガード &nbsp; [R] パンチ &nbsp; [T] キック
@@ -611,7 +611,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/fireba
 import { getDatabase, ref, get, set, update, push, onValue, onChildAdded, remove, onDisconnect, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m') || window.innerWidth <= 720;
-const ASSET_VERSION = 'v0.6.1';
+const ASSET_VERSION = 'v0.6.2';
 const GAME_WIDTH = 960;
 const GAME_HEIGHT = 720;
 const MOBILE_BAR_HEIGHT = 54;
@@ -1395,7 +1395,7 @@ class Player {
         this.vx = fromDir * ((move.blockPush || 1) * 0.55);
         this.guardSETimer = 0.24;
         this.hitFlashTimer = 0.08;
-        playSE('se_hit.mp3');
+        playJustGuardSE();
         return 'justBlocked';
       }
       this.hp = Math.max(0, this.hp - (move.chip || 0));
@@ -2875,6 +2875,60 @@ function playSE(path) {
   const se = new Audio(path);
   se.volume = 0.7;
   se.play().catch(() => {});
+}
+
+let seAudioContext = null;
+
+function getSEAudioContext() {
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) return null;
+  if (!seAudioContext) seAudioContext = new AudioContextCtor();
+  if (seAudioContext.state === 'suspended') seAudioContext.resume().catch(() => {});
+  return seAudioContext;
+}
+
+function playJustGuardSE() {
+  if (shouldMuteLocalAudio()) return;
+  const ctx = getSEAudioContext();
+  if (!ctx) {
+    playSE('se_hit.mp3');
+    return;
+  }
+  const now = ctx.currentTime;
+  const out = ctx.createGain();
+  out.gain.setValueAtTime(0.0001, now);
+  out.gain.exponentialRampToValueAtTime(0.55, now + 0.012);
+  out.gain.exponentialRampToValueAtTime(0.0001, now + 0.48);
+  out.connect(ctx.destination);
+
+  [1320, 1975, 2640, 3520].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = i === 0 ? 'triangle' : 'sine';
+    osc.frequency.setValueAtTime(freq, now);
+    osc.frequency.exponentialRampToValueAtTime(freq * (1.08 + i * 0.015), now + 0.06);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.26 / (i + 1), now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.34 + i * 0.045);
+    osc.connect(gain).connect(out);
+    osc.start(now);
+    osc.stop(now + 0.55);
+  });
+
+  const noiseBuffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.09), ctx.sampleRate);
+  const samples = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < samples.length; i++) samples[i] = (Math.random() * 2 - 1) * (1 - i / samples.length);
+  const noise = ctx.createBufferSource();
+  const filter = ctx.createBiquadFilter();
+  const noiseGain = ctx.createGain();
+  noise.buffer = noiseBuffer;
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(5200, now);
+  filter.Q.setValueAtTime(7, now);
+  noiseGain.gain.setValueAtTime(0.16, now);
+  noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+  noise.connect(filter).connect(noiseGain).connect(out);
+  noise.start(now);
 }
 
 function handleCharSelectKey(code) {
