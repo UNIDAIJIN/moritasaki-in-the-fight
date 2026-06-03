@@ -514,7 +514,7 @@
   <div class="credits-list">
     <div class="credits-row"><div class="credits-role">GAME TITLE</div><div class="credits-name">MoritaSaki in the Fight</div></div>
     <div class="credits-row"><div class="credits-role">DEVELOPMENT</div><div class="credits-name">NIDHOGG GAMES</div></div>
-    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.4.8</div></div>
+    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.4.9</div></div>
     <div class="credits-row"><div class="credits-role">PROGRAMMING</div><div class="credits-name">RIKU ISHIHARA</div></div>
     <div class="credits-row"><div class="credits-role">3D</div><div class="credits-name">RIKU ISHIHARA, YUI YAHIRO</div></div>
     <div class="credits-row"><div class="credits-role">MUSIC</div><div class="credits-name">NASUMI HEIKE</div></div>
@@ -552,7 +552,7 @@
 <div id="combo-p1"></div>
 <div id="combo-p2"></div>
 <div id="guest-controller-screen">通信中<span>HOSTの画面を見ながら操作</span></div>
-<div id="version-label">v0.4.8</div>
+<div id="version-label">v0.4.9</div>
 
 <div id="controls-guide">
   P1: [A/D] 移動 &nbsp; [W] ジャンプ &nbsp; [S] ガード &nbsp; [Q] パンチ &nbsp; [E] キック
@@ -596,7 +596,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/fireba
 import { getDatabase, ref, get, set, update, push, onValue, onChildAdded, remove, onDisconnect, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m') || window.innerWidth <= 720;
-const ASSET_VERSION = 'v0.4.8';
+const ASSET_VERSION = 'v0.4.9';
 const GAME_WIDTH = 960;
 const GAME_HEIGHT = 720;
 const MOBILE_BAR_HEIGHT = 54;
@@ -1573,6 +1573,7 @@ let onlineApp = null;
 let onlineDb = null;
 let onlineRoomId = null;
 let onlineRoomRef = null;
+let onlineRoomMode = null;
 let onlineRole = null;
 let onlineLocalPlayerId = 1;
 let onlinePeer = null;
@@ -1586,6 +1587,7 @@ let onlineLastInputPayload = '';
 let onlineLastInputSentAt = 0;
 const ONLINE_STATE_SYNC_DIRECT_INTERVAL = 0.05;
 const ONLINE_CONNECT_TIMEOUT_MS = 9000;
+const ONLINE_P2P_FALLBACK_MS = 4500;
 const ONLINE_FIREBASE_INPUT_INTERVAL_MS = 80;
 let onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
 
@@ -2052,6 +2054,7 @@ function resetOnlineSession() {
   if (onlineRoomRef && onlineRole === 'host') remove(onlineRoomRef).catch(() => {});
   onlineRoomId = null;
   onlineRoomRef = null;
+  onlineRoomMode = null;
   onlineRole = null;
   onlineLocalPlayerId = 1;
   onlinePeer = null;
@@ -2081,8 +2084,12 @@ function createOnlinePeer() {
   });
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'failed') {
-      setOnlineStatus('接続が切れました');
-      cleanupOnlineRoom();
+      if (onlineRoomMode === 'pvp-qr') {
+        enableFirebaseControlTransport();
+      } else {
+        setOnlineStatus('接続が切れました');
+        cleanupOnlineRoom();
+      }
     }
   };
   return pc;
@@ -2091,9 +2098,7 @@ function createOnlinePeer() {
 function wireOnlineChannel(channel) {
   onlineChannel = channel;
   channel.onopen = () => {
-    if (onlineConnectionTimeoutTimer) clearTimeout(onlineConnectionTimeoutTimer);
-    onlineConnectionTimeoutTimer = null;
-    setOnlineStatus('CONNECTED');
+    enableP2pControlTransport();
     enterOnlineCharSelect();
   };
   channel.onmessage = e => {
@@ -2105,6 +2110,8 @@ function wireOnlineChannel(channel) {
 
 function sendOnline(msg) {
   if (onlineFirebaseControlActive && onlineRoomId) {
+    if (msg.type === 'state' || msg.type === 'roundEnd') return;
+    if (msg.type === 'input' && onlineRole !== 'guest') return;
     const db = getOnlineDb();
     if (!db) return;
     push(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/controlMessages`), {
@@ -2117,6 +2124,15 @@ function sendOnline(msg) {
   if (onlineChannel?.readyState === 'open') {
     onlineChannel.send(JSON.stringify(msg));
   }
+}
+
+function enableP2pControlTransport() {
+  if (onlineConnectionTimeoutTimer) clearTimeout(onlineConnectionTimeoutTimer);
+  onlineConnectionTimeoutTimer = null;
+  if (onlineFirebaseControlUnsubscribe) onlineFirebaseControlUnsubscribe();
+  onlineFirebaseControlUnsubscribe = null;
+  onlineFirebaseControlActive = false;
+  setOnlineStatus('CONNECTED P2P');
 }
 
 function enableFirebaseControlTransport() {
@@ -2132,8 +2148,17 @@ function enableFirebaseControlTransport() {
     if (!data || data.sender === onlineLocalPlayerId || !data.payload) return;
     handleOnlineMessage(data.payload);
   });
-  setOnlineStatus('CONNECTED');
+  setOnlineStatus('CONNECTED RELAY');
   enterOnlineCharSelect();
+}
+
+function startPvpTransportFallback() {
+  if (onlineConnectionTimeoutTimer || onlineChannel?.readyState === 'open') return;
+  setOnlineStatus('P2P CONNECTING...');
+  onlineConnectionTimeoutTimer = setTimeout(() => {
+    if (onlineChannel?.readyState === 'open') return;
+    enableFirebaseControlTransport();
+  }, ONLINE_P2P_FALLBACK_MS);
 }
 
 function handleOnlineMessage(msg) {
@@ -2350,6 +2375,7 @@ async function startPvpHostQr() {
   currentBattleMode = 'online';
   onlineRole = 'host';
   onlineLocalPlayerId = 1;
+  onlineRoomMode = 'pvp-qr';
   onlineRoomRef = push(ref(db, `${ONLINE_DB_ROOT}/rooms`));
   onlineRoomId = onlineRoomRef.key;
   onlinePeer = createOnlinePeer();
@@ -2377,7 +2403,7 @@ async function startPvpHostQr() {
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/answer`), async snap => {
     if (!snap.exists() || onlinePeer.currentRemoteDescription) return;
     await onlinePeer.setRemoteDescription(snap.val());
-    enableFirebaseControlTransport();
+    startPvpTransportFallback();
   });
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/guestCandidates`), snap => {
     snap.forEach(child => onlinePeer.addIceCandidate(child.val()).catch(() => {}));
@@ -2496,6 +2522,7 @@ async function createOnlineRoom(db, waitingRef) {
   }
   onlineRole = 'host';
   onlineLocalPlayerId = 1;
+  onlineRoomMode = null;
   onlineRoomRef = push(ref(db, `${ONLINE_DB_ROOT}/rooms`));
   onlineRoomId = onlineRoomRef.key;
   onlinePeer = createOnlinePeer();
@@ -2559,6 +2586,7 @@ async function joinOnlineRoom(db, roomId) {
     setOnlineStatus('古いマッチをスキップしました');
     return false;
   }
+  onlineRoomMode = room.mode || null;
 
   onlinePeer = createOnlinePeer();
   onlinePeer.ondatachannel = e => wireOnlineChannel(e.channel);
@@ -2573,7 +2601,7 @@ async function joinOnlineRoom(db, roomId) {
     answer: { type: answer.type, sdp: answer.sdp },
   });
   if (room.mode === 'pvp-qr') {
-    enableFirebaseControlTransport();
+    startPvpTransportFallback();
   } else {
     setOnlineStatus('CONNECTING...');
     startOnlineConnectionTimeout();
