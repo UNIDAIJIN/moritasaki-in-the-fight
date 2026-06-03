@@ -514,7 +514,7 @@
   <div class="credits-list">
     <div class="credits-row"><div class="credits-role">GAME TITLE</div><div class="credits-name">MoritaSaki in the Fight</div></div>
     <div class="credits-row"><div class="credits-role">DEVELOPMENT</div><div class="credits-name">NIDHOGG GAMES</div></div>
-    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.4.7</div></div>
+    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.4.8</div></div>
     <div class="credits-row"><div class="credits-role">PROGRAMMING</div><div class="credits-name">RIKU ISHIHARA</div></div>
     <div class="credits-row"><div class="credits-role">3D</div><div class="credits-name">RIKU ISHIHARA, YUI YAHIRO</div></div>
     <div class="credits-row"><div class="credits-role">MUSIC</div><div class="credits-name">NASUMI HEIKE</div></div>
@@ -552,7 +552,7 @@
 <div id="combo-p1"></div>
 <div id="combo-p2"></div>
 <div id="guest-controller-screen">通信中<span>HOSTの画面を見ながら操作</span></div>
-<div id="version-label">v0.4.7</div>
+<div id="version-label">v0.4.8</div>
 
 <div id="controls-guide">
   P1: [A/D] 移動 &nbsp; [W] ジャンプ &nbsp; [S] ガード &nbsp; [Q] パンチ &nbsp; [E] キック
@@ -593,10 +593,10 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
-import { getDatabase, ref, get, set, update, push, onValue, remove, onDisconnect, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
+import { getDatabase, ref, get, set, update, push, onValue, onChildAdded, remove, onDisconnect, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m') || window.innerWidth <= 720;
-const ASSET_VERSION = 'v0.4.7';
+const ASSET_VERSION = 'v0.4.8';
 const GAME_WIDTH = 960;
 const GAME_HEIGHT = 720;
 const MOBILE_BAR_HEIGHT = 54;
@@ -1580,8 +1580,13 @@ let onlineChannel = null;
 let onlineStarted = false;
 let onlineConnectionTimeoutTimer = null;
 let onlineStateSyncTimer = 0;
+let onlineFirebaseControlActive = false;
+let onlineFirebaseControlUnsubscribe = null;
+let onlineLastInputPayload = '';
+let onlineLastInputSentAt = 0;
 const ONLINE_STATE_SYNC_DIRECT_INTERVAL = 0.05;
 const ONLINE_CONNECT_TIMEOUT_MS = 9000;
+const ONLINE_FIREBASE_INPUT_INTERVAL_MS = 80;
 let onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
 
 function clearRoundIntroTimers() {
@@ -2037,6 +2042,11 @@ function resetOnlineSession() {
   hidePvpPairPanel();
   if (onlineConnectionTimeoutTimer) clearTimeout(onlineConnectionTimeoutTimer);
   onlineConnectionTimeoutTimer = null;
+  if (onlineFirebaseControlUnsubscribe) onlineFirebaseControlUnsubscribe();
+  onlineFirebaseControlUnsubscribe = null;
+  onlineFirebaseControlActive = false;
+  onlineLastInputPayload = '';
+  onlineLastInputSentAt = 0;
   try { onlineChannel?.close(); } catch (_) {}
   try { onlinePeer?.close(); } catch (_) {}
   if (onlineRoomRef && onlineRole === 'host') remove(onlineRoomRef).catch(() => {});
@@ -2070,7 +2080,7 @@ function createOnlinePeer() {
     ],
   });
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+    if (pc.connectionState === 'failed') {
       setOnlineStatus('接続が切れました');
       cleanupOnlineRoom();
     }
@@ -2094,9 +2104,36 @@ function wireOnlineChannel(channel) {
 }
 
 function sendOnline(msg) {
+  if (onlineFirebaseControlActive && onlineRoomId) {
+    const db = getOnlineDb();
+    if (!db) return;
+    push(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/controlMessages`), {
+      sender: onlineLocalPlayerId,
+      payload: msg,
+      createdAtMs: Date.now(),
+    }).catch(() => {});
+    return;
+  }
   if (onlineChannel?.readyState === 'open') {
     onlineChannel.send(JSON.stringify(msg));
   }
+}
+
+function enableFirebaseControlTransport() {
+  if (onlineFirebaseControlActive || !onlineRoomId) return;
+  const db = getOnlineDb();
+  if (!db) return;
+  onlineFirebaseControlActive = true;
+  if (onlineConnectionTimeoutTimer) clearTimeout(onlineConnectionTimeoutTimer);
+  onlineConnectionTimeoutTimer = null;
+  const messagesRef = ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/controlMessages`);
+  onlineFirebaseControlUnsubscribe = onChildAdded(messagesRef, snap => {
+    const data = snap.val();
+    if (!data || data.sender === onlineLocalPlayerId || !data.payload) return;
+    handleOnlineMessage(data.payload);
+  });
+  setOnlineStatus('CONNECTED');
+  enterOnlineCharSelect();
 }
 
 function handleOnlineMessage(msg) {
@@ -2188,7 +2225,15 @@ function getLocalOnlineInput() {
 
 function syncOnlineInput() {
   if (currentBattleMode !== 'online' || !onlineStarted) return;
-  sendOnline({ type: 'input', input: getLocalOnlineInput() });
+  const input = getLocalOnlineInput();
+  if (onlineFirebaseControlActive) {
+    const payload = JSON.stringify(input);
+    const now = performance.now();
+    if (payload === onlineLastInputPayload && now - onlineLastInputSentAt < ONLINE_FIREBASE_INPUT_INTERVAL_MS) return;
+    onlineLastInputPayload = payload;
+    onlineLastInputSentAt = now;
+  }
+  sendOnline({ type: 'input', input });
 }
 
 function packPlayerState(player) {
@@ -2332,7 +2377,7 @@ async function startPvpHostQr() {
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/answer`), async snap => {
     if (!snap.exists() || onlinePeer.currentRemoteDescription) return;
     await onlinePeer.setRemoteDescription(snap.val());
-    startOnlineConnectionTimeout();
+    enableFirebaseControlTransport();
   });
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/guestCandidates`), snap => {
     snap.forEach(child => onlinePeer.addIceCandidate(child.val()).catch(() => {}));
@@ -2527,8 +2572,12 @@ async function joinOnlineRoom(db, roomId) {
     status: 'matched',
     answer: { type: answer.type, sdp: answer.sdp },
   });
-  setOnlineStatus('CONNECTING...');
-  startOnlineConnectionTimeout();
+  if (room.mode === 'pvp-qr') {
+    enableFirebaseControlTransport();
+  } else {
+    setOnlineStatus('CONNECTING...');
+    startOnlineConnectionTimeout();
+  }
 
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/hostCandidates`), snap => {
     snap.forEach(child => onlinePeer.addIceCandidate(child.val()).catch(() => {}));
