@@ -526,7 +526,7 @@
   <div class="credits-list">
     <div class="credits-row"><div class="credits-role">GAME TITLE</div><div class="credits-name">MoritaSaki in the Fight</div></div>
     <div class="credits-row"><div class="credits-role">DEVELOPMENT</div><div class="credits-name">NIDHOGG GAMES</div></div>
-    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.5.9</div></div>
+    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.6.0</div></div>
     <div class="credits-row"><div class="credits-role">PROGRAMMING</div><div class="credits-name">RIKU ISHIHARA</div></div>
     <div class="credits-row"><div class="credits-role">3D</div><div class="credits-name">RIKU ISHIHARA, YUI YAHIRO</div></div>
     <div class="credits-row"><div class="credits-role">MUSIC</div><div class="credits-name">NASUMI HEIKE</div></div>
@@ -565,7 +565,7 @@
 <div id="combo-p2"></div>
 <div id="guest-controller-screen">通信中<span>HOSTの画面を見ながら操作</span></div>
 <button id="victory-next" type="button" disabled>NEXT</button>
-<div id="version-label">v0.5.9</div>
+<div id="version-label">v0.6.0</div>
 
 <div id="controls-guide">
   P1: [A/D] 移動 &nbsp; [W] ジャンプ &nbsp; [S] ガード &nbsp; [Q] パンチ &nbsp; [E] キック
@@ -609,7 +609,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/fireba
 import { getDatabase, ref, get, set, update, push, onValue, onChildAdded, remove, onDisconnect, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m') || window.innerWidth <= 720;
-const ASSET_VERSION = 'v0.5.9';
+const ASSET_VERSION = 'v0.6.0';
 const GAME_WIDTH = 960;
 const GAME_HEIGHT = 720;
 const MOBILE_BAR_HEIGHT = 54;
@@ -1180,7 +1180,7 @@ class Player {
     this.modelYOffset = 0;
     this.modelZCenter = 0;   // ローカルZ中心 → ワールドXオフセットになる
     this.modelHalfW   = 0.3; // ローカルZ幅の半分 → ワールドX幅になる
-    this.model = null; this.mixer = null; this.anims = {}; this.curAnim = null;
+    this.model = null; this.mixer = null; this.anims = {}; this.curAnim = null; this.winRootMotion = null;
     this.voiceAudio = null;
     this.deadVoiceAudio = null;
     this.updateHPBar();
@@ -1264,6 +1264,7 @@ class Player {
         action.loop = THREE.LoopRepeat;
         action.clampWhenFinished = false;
         action.timeScale = 1.0;
+        this.winRootMotion = clip.userData?.rootMotion || null;
       }
       this.anims[name] = action;
     }
@@ -1685,8 +1686,40 @@ const ANIM_DEFS = [
   { name: 'block', path: 'anim/block.fbx' },
 ];
 
-function prepareAnimationClip(clip, { keepPosition = false } = {}) {
-  if (!keepPosition) clip.tracks = clip.tracks.filter(t => !t.name.endsWith('.position'));
+function extractRootMotion(clip) {
+  const track = clip.tracks.find(t => /Hips\.position$/.test(t.name));
+  if (!track || !track.values || track.values.length < 6) return null;
+  const values = Array.from(track.values);
+  const base = [values[0] || 0, values[1] || 0, values[2] || 0];
+  let maxDist = 0;
+  for (let i = 0; i < values.length; i += 3) {
+    const dx = values[i] - base[0];
+    const dz = values[i + 2] - base[2];
+    maxDist = Math.max(maxDist, Math.hypot(dx, dz));
+  }
+  const scale = maxDist > 1.2 ? 1.2 / maxDist : 1;
+  return { times: Array.from(track.times), values, base, scale };
+}
+
+function sampleRootMotion(rootMotion, time) {
+  if (!rootMotion?.times?.length) return { x: 0, z: 0 };
+  const { times, values, base, scale } = rootMotion;
+  const duration = times[times.length - 1] || 0;
+  const t = duration > 0 ? time % duration : 0;
+  let idx = 0;
+  while (idx < times.length - 2 && times[idx + 1] < t) idx++;
+  const t0 = times[idx], t1 = times[idx + 1] ?? t0;
+  const f = t1 > t0 ? (t - t0) / (t1 - t0) : 0;
+  const i0 = idx * 3;
+  const i1 = Math.min(i0 + 3, values.length - 3);
+  const x = (values[i0] + (values[i1] - values[i0]) * f - base[0]) * scale;
+  const z = (values[i0 + 2] + (values[i1 + 2] - values[i0 + 2]) * f - base[2]) * scale;
+  return { x, z };
+}
+
+function prepareAnimationClip(clip, { rootMotion = false } = {}) {
+  if (rootMotion) clip.userData = { ...(clip.userData || {}), rootMotion: extractRootMotion(clip) };
+  clip.tracks = clip.tracks.filter(t => !t.name.endsWith('.position'));
   // GLBのボーン名に合わせてコロンを除去（mixamorig:Hips → mixamorigHips）
   clip.tracks.forEach(t => { t.name = t.name.replace(/:/g, ''); });
   return clip;
@@ -3024,7 +3057,7 @@ async function loadCharacterAssets(charDef, label, progressOffset) {
   const count = charDef.texDir ? (charDef.texCount || 1) : 0;
   const texFiles = Array.from({length: count}, (_, i) => i === 0 ? 'Texture.jpg' : `Texture ${i}.jpg`);
   const texturesPromise = Promise.all(texFiles.map(f => loadTexture(`${charDef.texDir}/${f}`)));
-  const winPromise = loadFbxAnimation(charDef.winAnim, `${label} win`, { keepPosition: true });
+  const winPromise = loadFbxAnimation(charDef.winAnim, `${label} win`, { rootMotion: true });
 
   const [model, textures, winClip] = await Promise.all([modelPromise, texturesPromise, winPromise]);
   charDef.loadedTextures = textures;
@@ -3227,6 +3260,16 @@ function proceedFromVictory() {
 
 document.getElementById('victory-next').addEventListener('click', proceedFromVictory);
 
+function updateVictoryRootMotion() {
+  if (gameState !== 'victory' || !victoryWinnerId) return;
+  const winner = victoryWinnerId === 1 ? p1 : p2;
+  if (!winner?.model || !winner.winRootMotion) return;
+  const action = winner.anims.win;
+  const motion = sampleRootMotion(winner.winRootMotion, action?.time || 0);
+  winner.model.position.x = winner.x + motion.x;
+  winner.model.position.z = motion.z;
+}
+
 // ─── PLAYER SEPARATION ────────────────────────────────────────
 function separatePlayers() {
   if (!p1 || !p2) return;
@@ -3350,6 +3393,7 @@ function animate() {
     if (gameState === 'roundEnd' || gameState === 'roundIntro' || gameState === 'victory') {
       if (p1?.mixer) p1.mixer.update(frameDt);
       if (p2?.mixer) p2.mixer.update(frameDt);
+      updateVictoryRootMotion();
     }
   }
   updateCamera();
