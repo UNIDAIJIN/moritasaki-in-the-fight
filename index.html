@@ -1532,11 +1532,10 @@ let onlineLocalPlayerId = 1;
 let onlinePeer = null;
 let onlineChannel = null;
 let onlineStarted = false;
-let onlineRelayActive = false;
-let onlineRelayFallbackTimer = null;
+let onlineConnectionTimeoutTimer = null;
 let onlineStateSyncTimer = 0;
 const ONLINE_STATE_SYNC_DIRECT_INTERVAL = 0.05;
-const ONLINE_STATE_SYNC_RELAY_INTERVAL = 0.1;
+const ONLINE_CONNECT_TIMEOUT_MS = 9000;
 let onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
 
 function clearRoundIntroTimers() {
@@ -1850,8 +1849,8 @@ function getOnlineDb() {
 }
 
 function resetOnlineSession() {
-  if (onlineRelayFallbackTimer) clearTimeout(onlineRelayFallbackTimer);
-  onlineRelayFallbackTimer = null;
+  if (onlineConnectionTimeoutTimer) clearTimeout(onlineConnectionTimeoutTimer);
+  onlineConnectionTimeoutTimer = null;
   try { onlineChannel?.close(); } catch (_) {}
   try { onlinePeer?.close(); } catch (_) {}
   if (onlineRoomRef && onlineRole === 'host') remove(onlineRoomRef).catch(() => {});
@@ -1862,7 +1861,6 @@ function resetOnlineSession() {
   onlinePeer = null;
   onlineChannel = null;
   onlineStarted = false;
-  onlineRelayActive = false;
   onlineStateSyncTimer = 0;
   currentBattleMode = '2p';
   onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
@@ -1897,8 +1895,8 @@ function createOnlinePeer() {
 function wireOnlineChannel(channel) {
   onlineChannel = channel;
   channel.onopen = () => {
-    if (onlineRelayFallbackTimer) clearTimeout(onlineRelayFallbackTimer);
-    onlineRelayFallbackTimer = null;
+    if (onlineConnectionTimeoutTimer) clearTimeout(onlineConnectionTimeoutTimer);
+    onlineConnectionTimeoutTimer = null;
     setOnlineStatus('CONNECTED');
     enterOnlineCharSelect();
   };
@@ -1912,17 +1910,7 @@ function wireOnlineChannel(channel) {
 function sendOnline(msg) {
   if (onlineChannel?.readyState === 'open') {
     onlineChannel.send(JSON.stringify(msg));
-    return;
   }
-  if (!onlineRelayActive || !onlineRoomId) return;
-  const db = getOnlineDb();
-  if (!db) return;
-  const targetId = onlineLocalPlayerId === 1 ? 2 : 1;
-  set(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/relay/p${targetId}`), {
-    ...msg,
-    sentAt: Date.now(),
-    nonce: `${Date.now()}-${Math.random()}`,
-  }).catch(() => {});
 }
 
 function handleOnlineMessage(msg) {
@@ -1952,25 +1940,14 @@ function isOnlineHost() {
   return currentBattleMode === 'online' && onlineRole === 'host';
 }
 
-function setupOnlineRelay() {
-  if (onlineRelayActive || !onlineRoomId) return;
-  const db = getOnlineDb();
-  if (!db) return;
-  onlineRelayActive = true;
-  onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/relay/p${onlineLocalPlayerId}`), snap => {
-    if (!snap.exists()) return;
-    handleOnlineMessage(snap.val());
-  });
-}
-
-function startOnlineRelayFallback() {
-  if (onlineRelayFallbackTimer || onlineChannel?.readyState === 'open') return;
-  onlineRelayFallbackTimer = setTimeout(() => {
+function startOnlineConnectionTimeout() {
+  if (onlineConnectionTimeoutTimer || onlineChannel?.readyState === 'open') return;
+  onlineConnectionTimeoutTimer = setTimeout(() => {
     if (onlineChannel?.readyState === 'open') return;
-    setupOnlineRelay();
-    setOnlineStatus('CONNECTED (RELAY)');
-    enterOnlineCharSelect();
-  }, 6500);
+    cleanupOnlineRoom();
+    resetOnlineSession();
+    returnToOnlineScreen('P2P接続に失敗しました');
+  }, ONLINE_CONNECT_TIMEOUT_MS);
 }
 
 function enterOnlineCharSelect() {
@@ -2067,7 +2044,7 @@ function syncOnlineState(dt) {
   if (currentBattleMode !== 'online' || !onlineStarted || !isOnlineHost() || !p1 || !p2) return;
   onlineStateSyncTimer -= dt;
   if (onlineStateSyncTimer > 0) return;
-  onlineStateSyncTimer = onlineRelayActive ? ONLINE_STATE_SYNC_RELAY_INTERVAL : ONLINE_STATE_SYNC_DIRECT_INTERVAL;
+  onlineStateSyncTimer = ONLINE_STATE_SYNC_DIRECT_INTERVAL;
   sendOnline({
     type: 'state',
     p1: packPlayerState(p1),
@@ -2177,7 +2154,6 @@ async function createOnlineRoom(db, waitingRef) {
     offer: { type: offer.type, sdp: offer.sdp },
     createdAt: serverTimestamp(),
     createdAtMs: Date.now(),
-    relay: null,
   });
   const publishedRoomId = await publishWaitingRoom(waitingRef, onlineRoomId);
   if (publishedRoomId !== onlineRoomId) {
@@ -2200,7 +2176,7 @@ async function createOnlineRoom(db, waitingRef) {
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/answer`), async snap => {
     if (!snap.exists() || onlinePeer.currentRemoteDescription) return;
     await onlinePeer.setRemoteDescription(snap.val());
-    startOnlineRelayFallback();
+    startOnlineConnectionTimeout();
   });
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/guestCandidates`), snap => {
     snap.forEach(child => onlinePeer.addIceCandidate(child.val()).catch(() => {}));
@@ -2241,7 +2217,7 @@ async function joinOnlineRoom(db, roomId) {
     answer: { type: answer.type, sdp: answer.sdp },
   });
   setOnlineStatus('CONNECTING...');
-  startOnlineRelayFallback();
+  startOnlineConnectionTimeout();
 
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/hostCandidates`), snap => {
     snap.forEach(child => onlinePeer.addIceCandidate(child.val()).catch(() => {}));
