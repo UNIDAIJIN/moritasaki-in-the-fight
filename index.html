@@ -464,14 +464,26 @@
       border-width: 20px 12px 0 12px;
       border-color: #c6c9d0 transparent transparent transparent;
     }
+    .dpad-btn[data-mobile-keys]::before {
+      border-width: 0 10px 18px 10px;
+      border-color: transparent transparent #c6c9d0 transparent;
+    }
+    .dpad-btn[data-mobile-keys="KeyA KeyW"]::before { transform: translate(-50%, -50%) rotate(-45deg); }
+    .dpad-btn[data-mobile-keys="KeyD KeyW"]::before { transform: translate(-50%, -50%) rotate(45deg); }
+    .dpad-btn[data-mobile-keys="KeyA KeyS"]::before { transform: translate(-50%, -50%) rotate(-135deg); }
+    .dpad-btn[data-mobile-keys="KeyD KeyS"]::before { transform: translate(-50%, -50%) rotate(135deg); }
+    .dpad-btn[data-mobile-keys="KeyA KeyW"] { grid-column: 1; grid-row: 1; }
     .dpad-btn[data-mobile-key="KeyW"] { grid-column: 2; grid-row: 1; }
+    .dpad-btn[data-mobile-keys="KeyD KeyW"] { grid-column: 3; grid-row: 1; }
     .dpad-btn[data-mobile-key="KeyA"] { grid-column: 1; grid-row: 2; }
     .dpad-center {
       grid-column: 2; grid-row: 2; border-radius: 8px;
       background: #101115; box-shadow: inset 0 2px 8px rgba(0,0,0,0.65);
     }
     .dpad-btn[data-mobile-key="KeyD"] { grid-column: 3; grid-row: 2; }
+    .dpad-btn[data-mobile-keys="KeyA KeyS"] { grid-column: 1; grid-row: 3; }
     .dpad-btn[data-mobile-key="KeyS"] { grid-column: 2; grid-row: 3; }
+    .dpad-btn[data-mobile-keys="KeyD KeyS"] { grid-column: 3; grid-row: 3; }
     .mobile-buttons {
       display: flex; align-items: center; gap: 16px; flex: 0 0 auto;
     }
@@ -545,7 +557,7 @@
   <div class="credits-list">
     <div class="credits-row"><div class="credits-role">GAME TITLE</div><div class="credits-name">MoritaSaki in the Fight</div></div>
     <div class="credits-row"><div class="credits-role">DEVELOPMENT</div><div class="credits-name">NIDHOGG GAMES</div></div>
-    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.6.8</div></div>
+    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.6.9</div></div>
     <div class="credits-row"><div class="credits-role">PROGRAMMING</div><div class="credits-name">RIKU ISHIHARA</div></div>
     <div class="credits-row"><div class="credits-role">3D</div><div class="credits-name">RIKU ISHIHARA, YUI YAHIRO</div></div>
     <div class="credits-row"><div class="credits-role">MUSIC</div><div class="credits-name">NASUMI HEIKE</div></div>
@@ -585,7 +597,7 @@
 <div id="guest-controller-screen">通信中<span>HOSTの画面を見ながら操作</span></div>
 <button id="victory-next" type="button" disabled>NEXT</button>
 <div id="just-guard-popup">JUST!</div>
-<div id="version-label">v0.6.8</div>
+<div id="version-label">v0.6.9</div>
 
 <div id="controls-guide">
   P1: [A/D] 移動 &nbsp; [W] ジャンプ &nbsp; [S] ガード &nbsp; [R] パンチ &nbsp; [T] キック
@@ -597,11 +609,15 @@
 
 <div id="mobile-ctrl" aria-label="P1 mobile controller">
   <div class="dpad" aria-label="direction buttons">
+    <button class="dpad-btn" data-mobile-keys="KeyA KeyW" aria-label="up left"></button>
     <button class="dpad-btn" data-mobile-key="KeyW" aria-label="up"></button>
+    <button class="dpad-btn" data-mobile-keys="KeyD KeyW" aria-label="up right"></button>
     <button class="dpad-btn" data-mobile-key="KeyA" aria-label="left"></button>
     <div class="dpad-center"></div>
     <button class="dpad-btn" data-mobile-key="KeyD" aria-label="right"></button>
+    <button class="dpad-btn" data-mobile-keys="KeyA KeyS" aria-label="down left"></button>
     <button class="dpad-btn" data-mobile-key="KeyS" aria-label="down"></button>
+    <button class="dpad-btn" data-mobile-keys="KeyD KeyS" aria-label="down right"></button>
   </div>
   <div class="mobile-buttons">
     <button class="mobile-btn primary" data-mobile-key="KeyR">A</button>
@@ -629,7 +645,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/fireba
 import { getDatabase, ref, get, set, update, push, onValue, onChildAdded, remove, onDisconnect, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m') || window.innerWidth <= 720;
-const ASSET_VERSION = 'v0.6.8';
+const ASSET_VERSION = 'v0.6.9';
 const GAME_WIDTH = 960;
 const GAME_HEIGHT = 720;
 const MOBILE_BAR_HEIGHT = 54;
@@ -1027,7 +1043,7 @@ function setupMobileController() {
   const ctrl = document.getElementById('mobile-ctrl');
   if (!ctrl) return;
 
-  const buttonKeys = new Set();
+  const buttonKeyCounts = new Map();
   const activeMobileKeys = new Set();
   const pointerCodes = new Map();
 
@@ -1036,7 +1052,10 @@ function setupMobileController() {
   }
 
   function syncMobileKeys() {
-    const nextKeys = new Set(buttonKeys);
+    const nextKeys = new Set();
+    for (const [code, count] of buttonKeyCounts) {
+      if (count > 0) nextKeys.add(code);
+    }
     for (const code of nextKeys) {
       if (!activeMobileKeys.has(code)) pressGameKey(code);
     }
@@ -1047,39 +1066,47 @@ function setupMobileController() {
     for (const code of nextKeys) activeMobileKeys.add(code);
   }
 
-  function setButtonKey(code, down) {
-    if (down) buttonKeys.add(code);
-    else buttonKeys.delete(code);
+  function setButtonKeys(codes, down) {
+    for (const code of codes) {
+      const nextCount = (buttonKeyCounts.get(code) || 0) + (down ? 1 : -1);
+      if (nextCount > 0) buttonKeyCounts.set(code, nextCount);
+      else buttonKeyCounts.delete(code);
+    }
     syncMobileKeys();
   }
 
   clearMobileInputState = () => {
     for (const code of activeMobileKeys) keys.delete(code);
-    buttonKeys.clear();
+    buttonKeyCounts.clear();
     activeMobileKeys.clear();
     pointerCodes.clear();
     ctrl.querySelectorAll('.pressed').forEach(el => el.classList.remove('pressed'));
   };
 
-  ctrl.querySelectorAll('[data-mobile-key]').forEach(btn => {
-    const code = btn.dataset.mobileKey;
+  ctrl.querySelectorAll('[data-mobile-key], [data-mobile-keys]').forEach(btn => {
+    const codes = (btn.dataset.mobileKeys || btn.dataset.mobileKey || '').split(/\s+/).filter(Boolean);
     const press = e => {
       e.preventDefault();
+      if (!codes.length) return;
       if (e.pointerId != null) {
-        pointerCodes.set(e.pointerId, code);
+        pointerCodes.set(e.pointerId, codes);
         btn.setPointerCapture?.(e.pointerId);
       }
       btn.classList.add('pressed');
       vibrate(12);
       unlockSEAudioContext();
-      setButtonKey(code, true);
+      setButtonKeys(codes, true);
     };
     const release = e => {
       e.preventDefault();
-      const releaseCode = e.pointerId != null ? pointerCodes.get(e.pointerId) || code : code;
-      if (e.pointerId != null) pointerCodes.delete(e.pointerId);
+      let releaseCodes = codes;
+      if (e.pointerId != null) {
+        releaseCodes = pointerCodes.get(e.pointerId);
+        if (!releaseCodes) return;
+        pointerCodes.delete(e.pointerId);
+      }
       btn.classList.remove('pressed');
-      setButtonKey(releaseCode, false);
+      setButtonKeys(releaseCodes, false);
     };
     btn.addEventListener('pointerdown', press);
     btn.addEventListener('pointerup', release);
