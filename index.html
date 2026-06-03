@@ -273,7 +273,6 @@
       color: #fff;
     }
     .online-actions button:active { transform: translateY(3px); box-shadow: 0 2px 0 #000; }
-
     /* ── Character Select ── */
     #char-select {
       position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -461,7 +460,7 @@
   <div class="online-title">ONLINE BATTLE</div>
   <div id="online-status">READY</div>
   <div class="online-actions">
-    <button id="online-match" type="button">ROLLBACK MATCH</button>
+    <button id="online-match" type="button">QUICK MATCH</button>
     <button id="online-back" type="button">BACK</button>
   </div>
 </div>
@@ -1734,11 +1733,11 @@ function showOnlineScreen() {
   document.body.classList.remove('mobile-controls-active');
   onlineActionIndex = 0;
   renderOnlineActions();
-  setOnlineStatus('ROLLBACK MATCH を押してください');
+  setOnlineStatus('QUICK MATCH を押してください');
   gameState = 'online';
 }
 
-function returnToOnlineScreen(statusText = 'ROLLBACK MATCH を押してください') {
+function returnToOnlineScreen(statusText = 'QUICK MATCH を押してください') {
   clearRoundIntroTimers();
   clearRoundEndTimers();
   if (timerInterval) clearInterval(timerInterval);
@@ -2770,9 +2769,9 @@ document.getElementById('online-match').addEventListener('click', () => {
   onlineActionIndex = 0;
   renderOnlineActions();
   startBGM();
-  startRollbackBattle().catch(err => {
+  startOnlineMatchmaking().catch(err => {
     console.warn(err);
-    setOnlineStatus('ROLLBACK ERROR');
+    setOnlineStatus('ONLINE ERROR');
   });
 });
 document.getElementById('online-back').addEventListener('click', () => {
