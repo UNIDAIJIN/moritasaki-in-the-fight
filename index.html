@@ -274,25 +274,27 @@
     }
     .online-actions button:active { transform: translateY(3px); box-shadow: 0 2px 0 #000; }
     #pvp-pair-panel {
-      display: none; margin-top: 18px; width: min(420px, calc(100% - 32px));
-      flex-direction: column; align-items: center; gap: 10px;
+      position: absolute; inset: 0; z-index: 125; display: none;
+      width: 100%; height: 100%; margin: 0; padding: 26px; box-sizing: border-box;
+      flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+      background: rgba(0,0,0,0.92);
     }
     #pvp-qr-box {
-      display: none; width: 240px; height: 240px; background: #fff; padding: 10px;
+      display: none; width: min(82%, 600px); aspect-ratio: 1 / 1; background: #fff; padding: 14px;
       align-items: center; justify-content: center;
     }
     #pvp-qr-canvas {
-      display: none; width: 220px; height: 220px;
+      display: none; width: 100%; height: 100%;
     }
     #pvp-qr-image {
-      display: none; width: 220px; height: 220px; image-rendering: pixelated;
+      display: none; width: 100%; height: 100%; image-rendering: pixelated;
     }
     #pvp-scan-video {
       display: none; width: min(360px, 88vw); aspect-ratio: 1 / 1;
       object-fit: cover; border: 2px solid rgba(255,255,255,0.72); background: #000;
     }
     #pvp-room-code {
-      color: rgba(255,255,255,0.82); font: 900 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: rgba(255,255,255,0.82); font: 900 16px ui-monospace, SFMono-Regular, Menlo, monospace;
       letter-spacing: 1px; word-break: break-all; max-width: 100%;
     }
     #guest-controller-screen {
@@ -498,7 +500,7 @@
     <button class="title-mode-nav" id="title-mode-next" type="button" aria-label="Next mode">&gt;</button>
   </div>
   <div id="title-mode-notice"></div>
-  <div class="title-hint">A / D / ← / → SELECT &nbsp; ENTER / Q DECIDE</div>
+  <div class="title-hint">A / D / ← / → SELECT &nbsp; ENTER / R DECIDE</div>
 </div>
 
 <!-- Online Battle -->
@@ -526,7 +528,7 @@
   <div class="credits-list">
     <div class="credits-row"><div class="credits-role">GAME TITLE</div><div class="credits-name">MoritaSaki in the Fight</div></div>
     <div class="credits-row"><div class="credits-role">DEVELOPMENT</div><div class="credits-name">NIDHOGG GAMES</div></div>
-    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.6.0</div></div>
+    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.6.1</div></div>
     <div class="credits-row"><div class="credits-role">PROGRAMMING</div><div class="credits-name">RIKU ISHIHARA</div></div>
     <div class="credits-row"><div class="credits-role">3D</div><div class="credits-name">RIKU ISHIHARA, YUI YAHIRO</div></div>
     <div class="credits-row"><div class="credits-role">MUSIC</div><div class="credits-name">NASUMI HEIKE</div></div>
@@ -541,7 +543,7 @@
   <div id="cs-cards"></div>
   <button id="cs-back-title" type="button">タイトルに戻る</button>
   <div id="cs-status">
-    <span id="cs-p1-status">P1: A / D 選択 &nbsp; W / S 上下 &nbsp; Q 決定</span>
+    <span id="cs-p1-status">P1: A / D 選択 &nbsp; W / S 上下 &nbsp; R 決定</span>
     <span id="cs-p2-status">P2: ← / → 選択 &nbsp; ↑ / ↓ 上下 &nbsp; , 決定</span>
   </div>
   <div id="cs-countdown"></div>
@@ -565,10 +567,10 @@
 <div id="combo-p2"></div>
 <div id="guest-controller-screen">通信中<span>HOSTの画面を見ながら操作</span></div>
 <button id="victory-next" type="button" disabled>NEXT</button>
-<div id="version-label">v0.6.0</div>
+<div id="version-label">v0.6.1</div>
 
 <div id="controls-guide">
-  P1: [A/D] 移動 &nbsp; [W] ジャンプ &nbsp; [S] ガード &nbsp; [Q] パンチ &nbsp; [E] キック
+  P1: [A/D] 移動 &nbsp; [W] ジャンプ &nbsp; [S] ガード &nbsp; [R] パンチ &nbsp; [T] キック
   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   P2: [←/→] 移動 &nbsp; [↑] ジャンプ &nbsp; [↓] ガード &nbsp; [,] パンチ &nbsp; [.] キック
 </div>
@@ -584,8 +586,8 @@
     <button class="dpad-btn" data-mobile-key="KeyS" aria-label="down"></button>
   </div>
   <div class="mobile-buttons">
-    <button class="mobile-btn primary" data-mobile-key="KeyQ">A</button>
-    <button class="mobile-btn secondary" data-mobile-key="KeyE">B</button>
+    <button class="mobile-btn primary" data-mobile-key="KeyR">A</button>
+    <button class="mobile-btn secondary" data-mobile-key="KeyT">B</button>
   </div>
 </div>
 
@@ -609,7 +611,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/fireba
 import { getDatabase, ref, get, set, update, push, onValue, onChildAdded, remove, onDisconnect, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m') || window.innerWidth <= 720;
-const ASSET_VERSION = 'v0.6.0';
+const ASSET_VERSION = 'v0.6.1';
 const GAME_WIDTH = 960;
 const GAME_HEIGHT = 720;
 const MOBILE_BAR_HEIGHT = 54;
@@ -973,7 +975,7 @@ function clearLocalInputState() {
 
 function pressGameKey(code) {
   startBGM();
-  if (gameState === 'victory' && (code === 'KeyQ' || code === 'Comma' || code === 'Enter' || code === 'Space')) {
+  if (gameState === 'victory' && (code === 'KeyR' || code === 'Comma' || code === 'Enter' || code === 'Space')) {
     proceedFromVictory();
     return;
   }
@@ -1301,8 +1303,8 @@ class Player {
         right: keys.has('KeyD') || (p2AsP1 && keys.has('ArrowRight')),
         jump: keys.has('KeyW') || (p2AsP1 && keys.has('ArrowUp')),
         block: keys.has('KeyS') || (p2AsP1 && keys.has('ArrowDown')),
-        punch: keys.has('KeyQ') || (p2AsP1 && keys.has('Comma')),
-        kick: keys.has('KeyE') || (p2AsP1 && keys.has('Period')),
+        punch: keys.has('KeyR') || (p2AsP1 && keys.has('Comma')),
+        kick: keys.has('KeyT') || (p2AsP1 && keys.has('Period')),
       };
     }
     if (currentBattleMode === 'com') return getComInput(this, p1);
@@ -1902,7 +1904,7 @@ function handleTitleKey(code) {
     setTitleMode(titleModeIndex + 1);
     return true;
   }
-  if (code === 'Enter' || code === 'Space' || code === 'KeyQ' || code === 'Comma') {
+  if (code === 'Enter' || code === 'Space' || code === 'KeyR' || code === 'KeyQ' || code === 'Comma') {
     selectTitleMode();
     return true;
   }
@@ -1938,6 +1940,7 @@ const PVP_QR_SOURCES = [
   'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
   'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js',
 ];
+const PVP_QR_SIZE = 640;
 const loadedExternalScripts = new Set();
 
 function renderOnlineActions() {
@@ -1958,6 +1961,14 @@ function activateOnlineAction() {
 
 function handleOnlineKey(code) {
   if (gameState !== 'online') return false;
+  if (code === 'KeyT' && onlineRole === 'host' && onlineRoomMode === 'pvp-qr') {
+    resetOnlineSession();
+    onlineActionIndex = 0;
+    renderOnlineActions();
+    setOnlineStatus('HOST QR または GUEST を選んでください');
+    playTitleConfirmSE();
+    return true;
+  }
   if (code === 'KeyA' || code === 'ArrowLeft') {
     setOnlineAction(onlineActionIndex - 1);
     return true;
@@ -1966,7 +1977,7 @@ function handleOnlineKey(code) {
     setOnlineAction(onlineActionIndex + 1);
     return true;
   }
-  if (code === 'KeyQ' || code === 'Enter' || code === 'Space') {
+  if (code === 'KeyR' || code === 'KeyQ' || code === 'Enter' || code === 'Space') {
     activateOnlineAction();
     return true;
   }
@@ -1991,7 +2002,7 @@ function closeCreditsScreen() {
 
 function handleCreditsKey(code) {
   if (gameState !== 'credits') return false;
-  if (code === 'Enter' || code === 'Space' || code === 'KeyQ') {
+  if (code === 'Enter' || code === 'Space' || code === 'KeyR' || code === 'KeyQ') {
     closeCreditsScreen();
     return true;
   }
@@ -2108,7 +2119,7 @@ async function drawPvpQr(joinUrl) {
   const imageReady = new Promise(resolve => {
     image.onload = () => resolve(true);
     image.onerror = () => resolve(false);
-    image.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&data=${encodeURIComponent(joinUrl)}`;
+    image.src = `https://api.qrserver.com/v1/create-qr-code/?size=${PVP_QR_SIZE}x${PVP_QR_SIZE}&margin=10&data=${encodeURIComponent(joinUrl)}`;
   });
   if (await imageReady) return true;
   image.style.display = 'none';
@@ -2116,7 +2127,7 @@ async function drawPvpQr(joinUrl) {
   if (!ready) return false;
   if (window.QRCode?.toCanvas) {
     canvas.style.display = 'block';
-    await window.QRCode.toCanvas(canvas, joinUrl, { width: 220, margin: 1 });
+    await window.QRCode.toCanvas(canvas, joinUrl, { width: PVP_QR_SIZE, margin: 1 });
     return true;
   }
   if (typeof window.QRCode === 'function') {
@@ -2124,8 +2135,8 @@ async function drawPvpQr(joinUrl) {
     qrBox.replaceChildren();
     new window.QRCode(qrBox, {
       text: joinUrl,
-      width: 220,
-      height: 220,
+      width: PVP_QR_SIZE,
+      height: PVP_QR_SIZE,
       correctLevel: window.QRCode.CorrectLevel?.M,
     });
     return true;
@@ -2363,8 +2374,8 @@ function getLocalOnlineInput() {
     right: keys.has('KeyD') || (p2KeysEnabled && keys.has('ArrowRight')),
     jump: keys.has('KeyW') || (p2KeysEnabled && keys.has('ArrowUp')),
     block: keys.has('KeyS') || (p2KeysEnabled && keys.has('ArrowDown')),
-    punch: keys.has('KeyQ') || (p2KeysEnabled && keys.has('Comma')),
-    kick: keys.has('KeyE') || (p2KeysEnabled && keys.has('Period')),
+    punch: keys.has('KeyR') || (p2KeysEnabled && keys.has('Comma')),
+    kick: keys.has('KeyT') || (p2KeysEnabled && keys.has('Period')),
   };
 }
 
@@ -2518,7 +2529,7 @@ async function startPvpHostQr() {
   showPvpPairPanel();
   const qrReady = await drawPvpQr(joinUrl);
   document.getElementById('pvp-room-code').textContent = onlineRoomId;
-  setOnlineStatus(qrReady ? 'GUESTにQRを読ませてください' : 'QR生成に失敗しました。コードを入力してください');
+  setOnlineStatus(qrReady ? 'GUESTにQRを読ませてください / Bで閉じる' : 'QR生成に失敗しました。コードを入力してください / Bで閉じる');
 
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/answer`), async snap => {
     if (!snap.exists() || onlinePeer.currentRemoteDescription) return;
@@ -2800,13 +2811,13 @@ function renderCharSelect() {
   backTitle.classList.toggle('p2-active', p2OnTitle);
   if (isOnlineMode) {
     p1Status.textContent = onlineLocalPlayerId === 1
-      ? 'YOU: A / D 選択   Q 決定'
+      ? 'YOU: A / D 選択   R 決定'
       : 'P1: 相手の選択待ち';
     p2Status.textContent = onlineLocalPlayerId === 2
-      ? 'YOU: A / D 選択   Q 決定'
+      ? 'YOU: A / D 選択   R 決定'
       : 'P2: 相手の選択待ち';
   } else {
-    p1Status.textContent = 'P1: A / D 選択   W / S 上下   Q 決定';
+    p1Status.textContent = 'P1: A / D 選択   W / S 上下   R 決定';
     p2Status.textContent = 'P2: ← / → 選択   ↑ / ↓ 上下   , 決定';
   }
   p2Status.style.display = isComMode ? 'none' : '';
@@ -2890,7 +2901,7 @@ function handleCharSelectKey(code) {
       playSE('se_cursor.mp3');
       return;
     }
-    if ((code === 'KeyQ' || code === 'Enter' || code === 'Space') && localFocus === 'title') {
+    if ((code === 'KeyR' || code === 'Enter' || code === 'Space') && localFocus === 'title') {
       resetOnlineSession();
       returnFromCharSelectToTitle();
       return;
@@ -2911,7 +2922,7 @@ function handleCharSelectKey(code) {
       playSE('se_cursor.mp3');
       return;
     }
-    if (localFocus === 'characters' && code === 'KeyQ') {
+    if (localFocus === 'characters' && code === 'KeyR') {
       if (localIsP1) p1Ready = !p1Ready;
       else p2Ready = !p2Ready;
       renderCharSelect();
@@ -2955,7 +2966,7 @@ function handleCharSelectKey(code) {
     }
     return;
   }
-  if ((code === 'KeyQ' && p1CharFocus === 'title') || (!isComMode && code === 'Comma' && p2CharFocus === 'title')) {
+  if ((code === 'KeyR' && p1CharFocus === 'title') || (!isComMode && code === 'Comma' && p2CharFocus === 'title')) {
     returnFromCharSelectToTitle();
     return;
   }
@@ -2969,7 +2980,7 @@ function handleCharSelectKey(code) {
     if (!p1Ready) { p1Sel = (p1Sel + CHARACTERS.length - 1) % CHARACTERS.length; renderCharSelect(); playSE('se_cursor.mp3'); }
   } else if (p1CharFocus === 'characters' && code === 'KeyD') {
     if (!p1Ready) { p1Sel = (p1Sel + 1) % CHARACTERS.length; renderCharSelect(); playSE('se_cursor.mp3'); }
-  } else if (p1CharFocus === 'characters' && code === 'KeyQ') {
+  } else if (p1CharFocus === 'characters' && code === 'KeyR') {
     p1Ready = !p1Ready; renderCharSelect(); checkBothReady(); playSE('se_confirm.mp3');
   }
 
