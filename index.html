@@ -273,6 +273,7 @@
       color: #fff;
     }
     .online-actions button:active { transform: translateY(3px); box-shadow: 0 2px 0 #000; }
+
     /* ── Character Select ── */
     #char-select {
       position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -471,7 +472,7 @@
   <div class="credits-list">
     <div class="credits-row"><div class="credits-role">GAME TITLE</div><div class="credits-name">MoritaSaki in the Fight</div></div>
     <div class="credits-row"><div class="credits-role">DEVELOPMENT</div><div class="credits-name">NIDHOGG GAMES</div></div>
-    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.4.6</div></div>
+    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.4.4</div></div>
     <div class="credits-row"><div class="credits-role">PROGRAMMING</div><div class="credits-name">RIKU ISHIHARA</div></div>
     <div class="credits-row"><div class="credits-role">3D</div><div class="credits-name">RIKU ISHIHARA, YUI YAHIRO</div></div>
     <div class="credits-row"><div class="credits-role">MUSIC</div><div class="credits-name">NASUMI HEIKE</div></div>
@@ -508,7 +509,7 @@
 <div id="message"></div>
 <div id="combo-p1"></div>
 <div id="combo-p2"></div>
-<div id="version-label">v0.4.6</div>
+<div id="version-label">v0.4.4</div>
 
 <div id="controls-guide">
   P1: [A/D] 移動 &nbsp; [W] ジャンプ &nbsp; [S] ガード &nbsp; [Q] パンチ &nbsp; [E] キック
@@ -541,17 +542,6 @@
 }
 </script>
 
-<script>
-function loadNetplayFallback() {
-  const script = document.createElement('script');
-  script.src = 'https://cdn.jsdelivr.net/npm/netplayjs@0.4.1/dist/netplay.js';
-  script.integrity = 'sha384-6Yb8LWAT488jwK+nIjvD4S5/poq1Xn69NYjH1RXKHoaUOaFJrKQ1rfGQgKm8oQjX';
-  script.crossOrigin = 'anonymous';
-  document.head.appendChild(script);
-}
-</script>
-<script src="https://unpkg.com/netplayjs@0.4.1/dist/netplay.js" integrity="sha384-6Yb8LWAT488jwK+nIjvD4S5/poq1Xn69NYjH1RXKHoaUOaFJrKQ1rfGQgKm8oQjX" crossorigin="anonymous" onerror="loadNetplayFallback()"></script>
-
 <script type="module">
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
@@ -560,7 +550,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/fireba
 import { getDatabase, ref, get, set, update, push, onValue, remove, onDisconnect, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m') || window.innerWidth <= 720;
-const ASSET_VERSION = 'v0.4.6';
+const ASSET_VERSION = 'v0.4.4';
 const GAME_WIDTH = 960;
 const GAME_HEIGHT = 720;
 const MOBILE_BAR_HEIGHT = 54;
@@ -951,32 +941,13 @@ function setupMobileController() {
     try { navigator.vibrate?.(ms); } catch (_) {}
   }
 
-  function mobileKeyValue(code) {
-    return ({ KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd', KeyQ: 'q', KeyE: 'e' })[code] || '';
-  }
-
-  function dispatchMobileKeyboard(code, type) {
-    window.dispatchEvent(new KeyboardEvent(type, {
-      code,
-      key: mobileKeyValue(code),
-      bubbles: true,
-      cancelable: true,
-    }));
-  }
-
   function syncMobileKeys() {
     const nextKeys = new Set(buttonKeys);
     for (const code of nextKeys) {
-      if (!activeMobileKeys.has(code)) {
-        dispatchMobileKeyboard(code, 'keydown');
-        pressGameKey(code);
-      }
+      if (!activeMobileKeys.has(code)) pressGameKey(code);
     }
     for (const code of activeMobileKeys) {
-      if (!nextKeys.has(code)) {
-        dispatchMobileKeyboard(code, 'keyup');
-        releaseGameKey(code);
-      }
+      if (!nextKeys.has(code)) releaseGameKey(code);
     }
     activeMobileKeys.clear();
     for (const code of nextKeys) activeMobileKeys.add(code);
@@ -1561,26 +1532,12 @@ let onlineLocalPlayerId = 1;
 let onlinePeer = null;
 let onlineChannel = null;
 let onlineStarted = false;
-let onlineRequestedMode = 'online';
-let onlineConnectionTimeoutTimer = null;
+let onlineRelayActive = false;
+let onlineRelayFallbackTimer = null;
 let onlineStateSyncTimer = 0;
-let onlineHeartbeatTimer = null;
 const ONLINE_STATE_SYNC_DIRECT_INTERVAL = 0.05;
-const ONLINE_CONNECT_TIMEOUT_MS = 9000;
-const ONLINE_HOST_HEARTBEAT_MS = 3000;
-const ONLINE_HOST_STALE_MS = 12_000;
+const ONLINE_STATE_SYNC_RELAY_INTERVAL = 0.1;
 let onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
-let rollbackWrapper = null;
-let rollbackRenderState = null;
-let rollbackMatched = false;
-let rollbackBattleReady = false;
-let rollbackCharSelectShown = false;
-let rollbackInputMode = false;
-let rollbackSelectUnsub = null;
-
-function isRollbackBattle() {
-  return currentBattleMode === 'rollback';
-}
 
 function clearRoundIntroTimers() {
   roundIntroTimers.forEach(id => clearTimeout(id));
@@ -1889,10 +1846,8 @@ function getOnlineDb() {
 }
 
 function resetOnlineSession() {
-  if (onlineConnectionTimeoutTimer) clearTimeout(onlineConnectionTimeoutTimer);
-  if (onlineHeartbeatTimer) clearInterval(onlineHeartbeatTimer);
-  onlineConnectionTimeoutTimer = null;
-  onlineHeartbeatTimer = null;
+  if (onlineRelayFallbackTimer) clearTimeout(onlineRelayFallbackTimer);
+  onlineRelayFallbackTimer = null;
   try { onlineChannel?.close(); } catch (_) {}
   try { onlinePeer?.close(); } catch (_) {}
   if (onlineRoomRef && onlineRole === 'host') remove(onlineRoomRef).catch(() => {});
@@ -1903,35 +1858,16 @@ function resetOnlineSession() {
   onlinePeer = null;
   onlineChannel = null;
   onlineStarted = false;
-  onlineRequestedMode = 'online';
+  onlineRelayActive = false;
   onlineStateSyncTimer = 0;
   currentBattleMode = '2p';
   onlineRemoteInput = { left: false, right: false, jump: false, block: false, punch: false, kick: false };
-}
-
-function resetRollbackSession() {
-  if (rollbackSelectUnsub) rollbackSelectUnsub();
-  rollbackRenderState = null;
-  rollbackWrapper = null;
-  rollbackMatched = false;
-  rollbackBattleReady = false;
-  rollbackCharSelectShown = false;
-  rollbackInputMode = false;
-  rollbackSelectUnsub = null;
 }
 
 function cleanupOnlineRoom() {
   if (!onlineRoomRef) return;
   if (onlineRole === 'host') remove(onlineRoomRef).catch(() => {});
   else update(onlineRoomRef, { status: 'closed' }).catch(() => {});
-}
-
-function startOnlineHostHeartbeat() {
-  if (!onlineRoomRef || onlineRole !== 'host') return;
-  if (onlineHeartbeatTimer) clearInterval(onlineHeartbeatTimer);
-  const beat = () => update(onlineRoomRef, { hostSeenAt: Date.now() }).catch(() => {});
-  beat();
-  onlineHeartbeatTimer = setInterval(beat, ONLINE_HOST_HEARTBEAT_MS);
 }
 
 function createOnlinePeer() {
@@ -1957,11 +1893,10 @@ function createOnlinePeer() {
 function wireOnlineChannel(channel) {
   onlineChannel = channel;
   channel.onopen = () => {
-    if (onlineConnectionTimeoutTimer) clearTimeout(onlineConnectionTimeoutTimer);
-    onlineConnectionTimeoutTimer = null;
+    if (onlineRelayFallbackTimer) clearTimeout(onlineRelayFallbackTimer);
+    onlineRelayFallbackTimer = null;
     setOnlineStatus('CONNECTED');
-    if (onlineRequestedMode === 'rollback') enterRollbackCharSelectAfterMatch();
-    else enterOnlineCharSelect();
+    enterOnlineCharSelect();
   };
   channel.onmessage = e => {
     let msg;
@@ -1973,7 +1908,17 @@ function wireOnlineChannel(channel) {
 function sendOnline(msg) {
   if (onlineChannel?.readyState === 'open') {
     onlineChannel.send(JSON.stringify(msg));
+    return;
   }
+  if (!onlineRelayActive || !onlineRoomId) return;
+  const db = getOnlineDb();
+  if (!db) return;
+  const targetId = onlineLocalPlayerId === 1 ? 2 : 1;
+  set(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/relay/p${targetId}`), {
+    ...msg,
+    sentAt: Date.now(),
+    nonce: `${Date.now()}-${Math.random()}`,
+  }).catch(() => {});
 }
 
 function handleOnlineMessage(msg) {
@@ -1985,13 +1930,6 @@ function handleOnlineMessage(msg) {
     p1Sel = msg.p1Sel ?? 0;
     p2Sel = msg.p2Sel ?? 1;
     startOnlineGame();
-  } else if (msg.type === 'rollbackStart') {
-    p1Sel = msg.p1Sel ?? p1Sel;
-    p2Sel = msg.p2Sel ?? p2Sel;
-    startRollbackGame().catch(err => {
-      console.warn(err);
-      setOnlineStatus('ROLLBACK ERROR');
-    });
   } else if (msg.type === 'state') {
     applyOnlineState(msg);
   } else if (msg.type === 'roundEnd') {
@@ -2010,14 +1948,25 @@ function isOnlineHost() {
   return currentBattleMode === 'online' && onlineRole === 'host';
 }
 
-function startOnlineConnectionTimeout() {
-  if (onlineConnectionTimeoutTimer || onlineChannel?.readyState === 'open') return;
-  onlineConnectionTimeoutTimer = setTimeout(() => {
+function setupOnlineRelay() {
+  if (onlineRelayActive || !onlineRoomId) return;
+  const db = getOnlineDb();
+  if (!db) return;
+  onlineRelayActive = true;
+  onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/relay/p${onlineLocalPlayerId}`), snap => {
+    if (!snap.exists()) return;
+    handleOnlineMessage(snap.val());
+  });
+}
+
+function startOnlineRelayFallback() {
+  if (onlineRelayFallbackTimer || onlineChannel?.readyState === 'open') return;
+  onlineRelayFallbackTimer = setTimeout(() => {
     if (onlineChannel?.readyState === 'open') return;
-    cleanupOnlineRoom();
-    resetOnlineSession();
-    returnToOnlineScreen('P2P接続に失敗しました');
-  }, ONLINE_CONNECT_TIMEOUT_MS);
+    setupOnlineRelay();
+    setOnlineStatus('CONNECTED (RELAY)');
+    enterOnlineCharSelect();
+  }, 6500);
 }
 
 function enterOnlineCharSelect() {
@@ -2034,18 +1983,17 @@ function enterOnlineCharSelect() {
 }
 
 function syncOnlineSelection() {
-  if (currentBattleMode !== 'online' && !isRollbackBattle()) return;
+  if (currentBattleMode !== 'online') return;
   sendOnline({
     type: 'select',
     playerId: onlineLocalPlayerId,
     sel: onlineLocalPlayerId === 1 ? p1Sel : p2Sel,
     ready: onlineLocalPlayerId === 1 ? p1Ready : p2Ready,
   });
-  syncRollbackSelectionToRoom();
 }
 
 function applyOnlineSelection(msg) {
-  if ((currentBattleMode !== 'online' && !isRollbackBattle()) || onlineStarted) return;
+  if (currentBattleMode !== 'online' || onlineStarted) return;
   if (msg.playerId === 1) {
     p1Sel = msg.sel ?? p1Sel;
     p1Ready = Boolean(msg.ready);
@@ -2055,52 +2003,6 @@ function applyOnlineSelection(msg) {
   }
   renderCharSelect();
   checkBothReady();
-}
-
-function syncRollbackSelectionToRoom() {
-  if (!isRollbackBattle() || !onlineRoomId) return;
-  const db = getOnlineDb();
-  if (!db) return;
-  set(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/rollbackSelect/p${onlineLocalPlayerId}`), {
-    sel: onlineLocalPlayerId === 1 ? p1Sel : p2Sel,
-    ready: onlineLocalPlayerId === 1 ? p1Ready : p2Ready,
-    updatedAt: Date.now(),
-  }).catch(() => {});
-}
-
-function applyRollbackRoomSelection(snapshotValue) {
-  if (!isRollbackBattle() || onlineStarted || !snapshotValue) return;
-  if (snapshotValue.start && onlineRole !== 'host') {
-    p1Sel = snapshotValue.start.p1Sel ?? p1Sel;
-    p2Sel = snapshotValue.start.p2Sel ?? p2Sel;
-    startRollbackGame().catch(err => {
-      console.warn(err);
-      setOnlineStatus('ROLLBACK ERROR');
-    });
-    return;
-  }
-  const p1State = snapshotValue.p1;
-  const p2State = snapshotValue.p2;
-  if (p1State) {
-    p1Sel = p1State.sel ?? p1Sel;
-    p1Ready = Boolean(p1State.ready);
-  }
-  if (p2State) {
-    p2Sel = p2State.sel ?? p2Sel;
-    p2Ready = Boolean(p2State.ready);
-  }
-  renderCharSelect();
-  checkBothReady();
-}
-
-function watchRollbackSelection() {
-  if (!isRollbackBattle() || !onlineRoomId || rollbackSelectUnsub) return;
-  const db = getOnlineDb();
-  if (!db) return;
-  rollbackSelectUnsub = onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/rollbackSelect`), snap => {
-    if (!snap.exists()) return;
-    applyRollbackRoomSelection(snap.val());
-  });
 }
 
 function getLocalOnlineInput() {
@@ -2158,11 +2060,10 @@ function applyPlayerState(player, state) {
 }
 
 function syncOnlineState(dt) {
-  if (rollbackInputMode) return;
   if (currentBattleMode !== 'online' || !onlineStarted || !isOnlineHost() || !p1 || !p2) return;
   onlineStateSyncTimer -= dt;
   if (onlineStateSyncTimer > 0) return;
-  onlineStateSyncTimer = ONLINE_STATE_SYNC_DIRECT_INTERVAL;
+  onlineStateSyncTimer = onlineRelayActive ? ONLINE_STATE_SYNC_RELAY_INTERVAL : ONLINE_STATE_SYNC_DIRECT_INTERVAL;
   sendOnline({
     type: 'state',
     p1: packPlayerState(p1),
@@ -2182,7 +2083,6 @@ function updateOnlineGuestRender(dt) {
 }
 
 function applyOnlineState(msg) {
-  if (rollbackInputMode) return;
   if (!isOnlineGuest() || !onlineStarted || !p1 || !p2) return;
   applyPlayerState(p1, msg.p1);
   applyPlayerState(p2, msg.p2);
@@ -2196,411 +2096,6 @@ function applyOnlineState(msg) {
   updateWinDots();
 }
 
-function cloneRollbackFighter(id, x) {
-  return {
-    id,
-    x,
-    y: GROUND_Y,
-    vx: 0,
-    vy: 0,
-    hp: DEFAULT_STATS.hp,
-    state: 'idle',
-    stateTime: 0,
-    grounded: true,
-    facingDir: id === 1 ? 1 : -1,
-    atkType: null,
-    hasHit: false,
-    hitStunTimer: 0,
-    blockStunTimer: 0,
-    justGuardTimer: 0,
-    prevPunch: false,
-    prevKick: false,
-  };
-}
-
-function netplayKeyDown(input, names) {
-  if (!input) return false;
-  for (const name of names) {
-    if (typeof input.isKeyDown === 'function' && input.isKeyDown(name)) return true;
-    if (typeof input.keyDown === 'function' && input.keyDown(name)) return true;
-    if (typeof input.isPressed === 'function' && input.isPressed(name)) return true;
-    if (input.keys?.[name] || input.keyboard?.[name] || input.buttons?.[name]) return true;
-    if (input._keys?.[name] || input._keyboard?.[name]) return true;
-  }
-  return false;
-}
-
-function readNetplayInput(input) {
-  const arrows = typeof input?.arrowKeys === 'function' ? input.arrowKeys() : { x: 0, y: 0 };
-  const left = arrows.x < -0.1 || netplayKeyDown(input, ['a', 'A', 'KeyA', 'ArrowLeft']);
-  const right = arrows.x > 0.1 || netplayKeyDown(input, ['d', 'D', 'KeyD', 'ArrowRight']);
-  const jump = arrows.y > 0.1 || netplayKeyDown(input, ['w', 'W', 'KeyW', 'ArrowUp']);
-  const block = arrows.y < -0.1 || netplayKeyDown(input, ['s', 'S', 'KeyS', 'ArrowDown']);
-  return {
-    left,
-    right,
-    jump,
-    block,
-    punch: netplayKeyDown(input, ['q', 'Q', 'KeyQ', 'z', 'Z', 'KeyZ', ' ', 'Space', 'Enter']),
-    kick: netplayKeyDown(input, ['e', 'E', 'KeyE', 'x', 'X', 'KeyX', '.', 'Period']),
-  };
-}
-
-function rollbackMove(type) {
-  return MOVE_DEFS[type === 'heavy' ? 'heavy' : 'light'];
-}
-
-function rollbackStartAttack(fighter, type) {
-  const move = rollbackMove(type);
-  fighter.state = type === 'heavy' ? 'kick' : 'punch';
-  fighter.stateTime = move.startup + move.active + move.recovery;
-  fighter.atkType = type;
-  fighter.hasHit = false;
-  if (fighter.grounded) fighter.vx = fighter.facingDir * (move.selfSlide || 0);
-}
-
-function rollbackUpdateFighter(fighter, other, input) {
-  fighter.stateTime = Math.max(0, fighter.stateTime - FIXED_DT);
-  fighter.hitStunTimer = Math.max(0, fighter.hitStunTimer - FIXED_DT);
-  fighter.blockStunTimer = Math.max(0, fighter.blockStunTimer - FIXED_DT);
-  fighter.justGuardTimer = Math.max(0, fighter.justGuardTimer - FIXED_DT);
-  if (fighter.state === 'dead') {
-    fighter.vy += GRAVITY * FIXED_DT;
-    fighter.x += fighter.vx * FIXED_DT;
-    fighter.y += fighter.vy * FIXED_DT;
-    return;
-  }
-
-  if (!['punch','kick','hitstun','blockstun','recoil','dead'].includes(fighter.state)) {
-    fighter.facingDir = other.x >= fighter.x ? 1 : -1;
-  }
-
-  const punchPressed = input.punch && !fighter.prevPunch;
-  const kickPressed = input.kick && !fighter.prevKick;
-  if (fighter.state === 'hitstun') {
-    fighter.vx *= 0.94;
-    if (fighter.stateTime <= 0) fighter.state = 'idle';
-  } else if (fighter.state === 'blockstun') {
-    fighter.vx *= 0.90;
-    if (fighter.stateTime <= 0) fighter.state = 'idle';
-  } else if (fighter.state === 'recoil') {
-    fighter.vx *= 0.86;
-    if (fighter.stateTime <= 0) fighter.state = 'idle';
-  } else if (fighter.state === 'punch' || fighter.state === 'kick') {
-    fighter.vx *= fighter.grounded ? 0.82 : 1;
-    if (fighter.stateTime <= 0) {
-      fighter.state = 'idle';
-      fighter.atkType = null;
-      fighter.hasHit = false;
-    }
-  } else if (punchPressed) {
-    rollbackStartAttack(fighter, 'light');
-  } else if (kickPressed) {
-    rollbackStartAttack(fighter, 'heavy');
-  } else if (input.block && fighter.grounded) {
-    if (fighter.state !== 'block') fighter.justGuardTimer = JUST_GUARD_WINDOW;
-    fighter.state = 'block';
-    fighter.vx = 0;
-  } else if (fighter.grounded) {
-    if (input.left) {
-      fighter.vx = -BASE_MOVE_SPEED;
-      fighter.state = 'walk';
-    } else if (input.right) {
-      fighter.vx = BASE_MOVE_SPEED;
-      fighter.state = 'walk';
-    } else {
-      fighter.vx = 0;
-      fighter.state = 'idle';
-    }
-    if (input.jump) {
-      fighter.vy = BASE_JUMP_FORCE;
-      fighter.grounded = false;
-      fighter.state = 'jump';
-    }
-  } else {
-    if (input.left) fighter.vx = -BASE_MOVE_SPEED * 0.85;
-    else if (input.right) fighter.vx = BASE_MOVE_SPEED * 0.85;
-    fighter.state = 'jump';
-  }
-
-  fighter.prevPunch = input.punch;
-  fighter.prevKick = input.kick;
-  if (!fighter.grounded) fighter.vy += GRAVITY * FIXED_DT;
-  fighter.x += fighter.vx * FIXED_DT;
-  fighter.y += fighter.vy * FIXED_DT;
-  if (fighter.y <= GROUND_Y) {
-    fighter.y = GROUND_Y;
-    fighter.vy = 0;
-    if (!fighter.grounded) {
-      fighter.grounded = true;
-      if (fighter.state === 'jump') fighter.state = 'idle';
-    }
-  }
-  fighter.x = Math.max(STAGE_MIN, Math.min(STAGE_MAX, fighter.x));
-}
-
-function rollbackSeparate(a, b) {
-  const gap = b.x - a.x;
-  if (gap >= MIN_DIST) return;
-  const correction = (MIN_DIST - gap) * 0.5 + 0.001;
-  a.x = Math.max(STAGE_MIN, a.x - correction);
-  b.x = Math.min(STAGE_MAX, b.x + correction);
-  if (a.vx > 0) a.vx = 0;
-  if (b.vx < 0) b.vx = 0;
-}
-
-function rollbackAttackBox(fighter) {
-  if (!fighter.atkType || fighter.hasHit) return null;
-  const move = rollbackMove(fighter.atkType);
-  const elapsed = move.startup + move.active + move.recovery - fighter.stateTime;
-  if (elapsed < move.startup || elapsed > move.startup + move.active) return null;
-  return {
-    move,
-    minX: fighter.facingDir > 0 ? fighter.x - 0.18 : fighter.x - move.range,
-    maxX: fighter.facingDir > 0 ? fighter.x + move.range : fighter.x + 0.18,
-    minY: fighter.y + move.heightMin,
-    maxY: fighter.y + move.heightMax,
-  };
-}
-
-function rollbackBodyBox(fighter) {
-  return {
-    minX: fighter.x - 0.34,
-    maxX: fighter.x + 0.34,
-    minY: fighter.y + 0.1,
-    maxY: fighter.y + CHAR_H * 0.95,
-  };
-}
-
-function rollbackReceiveAttack(def, move, fromDir) {
-  if (def.state === 'dead' || def.hitStunTimer > 0 || def.blockStunTimer > 0) return 'none';
-  const guarding = def.grounded && def.state === 'block' && def.facingDir !== fromDir;
-  if (guarding && def.justGuardTimer > 0) {
-    def.blockStunTimer = Math.min(move.blockstun * 0.45, 0.14);
-    def.state = 'blockstun';
-    def.stateTime = def.blockStunTimer;
-    def.vx = fromDir * ((move.blockPush || 1) * 0.55);
-    return 'justBlocked';
-  }
-  if (guarding) {
-    def.hp = Math.max(0, def.hp - (move.chip || 0));
-    def.blockStunTimer = move.blockstun;
-    def.state = 'blockstun';
-    def.stateTime = move.blockstun;
-    def.vx = fromDir * (move.blockPush || 1);
-  } else {
-    def.hp = Math.max(0, def.hp - move.damage);
-    def.hitStunTimer = move.hitstun;
-    def.state = 'hitstun';
-    def.stateTime = move.hitstun;
-    def.vx = fromDir * move.knockback;
-  }
-  if (def.hp <= 0) {
-    def.state = 'dead';
-    def.stateTime = 9999;
-    def.vx = fromDir * 36;
-    def.vy = 18;
-  }
-  return guarding ? 'blocked' : 'hit';
-}
-
-function rollbackResolveAttack(atk, def) {
-  const tip = rollbackAttackBox(atk);
-  if (!tip) return;
-  const body = rollbackBodyBox(def);
-  if (tip.maxX <= body.minX || tip.minX >= body.maxX) return;
-  if (tip.maxY <= body.minY || tip.minY >= body.maxY) return;
-  const result = rollbackReceiveAttack(def, tip.move, atk.facingDir);
-  if (result !== 'none') {
-    atk.hasHit = true;
-    if (result === 'justBlocked') {
-      atk.state = 'recoil';
-      atk.stateTime = JUST_GUARD_RECOIL;
-      atk.atkType = null;
-      atk.vx = -atk.facingDir * JUST_GUARD_PUSH;
-    }
-  }
-}
-
-function applyRollbackRenderState(state) {
-  if (!state || !p1 || !p2) return;
-  [p1, p2].forEach((player, i) => {
-    const src = state.players[i];
-    player.x = src.x;
-    player.y = src.y;
-    player.vx = src.vx;
-    player.vy = src.vy;
-    player.hp = src.hp;
-    player.state = src.state;
-    player.stateTime = src.stateTime;
-    player.grounded = src.grounded;
-    player.facingDir = src.facingDir;
-    player.hitStunTimer = src.hitStunTimer;
-    player.blockStunTimer = src.blockStunTimer;
-    player.updateHPBar();
-    player._sync3D();
-  });
-  roundTimer = Math.max(0, Math.ceil(state.timerFrames / 60));
-  document.getElementById('timer-box').textContent = roundTimer;
-  const message = document.getElementById('message');
-  if (state.winnerId) {
-    message.textContent = `${state.winnerId === 1 ? CHARACTERS[p1Sel].name : CHARACTERS[p2Sel].name} WINS!`;
-    message.style.display = 'block';
-  } else if (gameState === 'playing') {
-    message.style.display = 'none';
-  }
-}
-
-function enterRollbackCharSelectAfterMatch() {
-  if (rollbackCharSelectShown || !isRollbackBattle()) return;
-  rollbackCharSelectShown = true;
-  rollbackMatched = true;
-  setTimeout(() => {
-    if (!isRollbackBattle()) return;
-    setOnlineStatus('ROLLBACK CONNECTED');
-    p1Ready = false;
-    p2Ready = false;
-    showCharSelect();
-    watchRollbackSelection();
-    syncOnlineSelection();
-  }, 0);
-}
-
-function createRollbackBattleGameClass() {
-  return class RollbackBattleGame extends window.netplayjs.Game {
-    static timestep = 1000 / 60;
-    static canvasSize = { width: GAME_WIDTH, height: GAME_HEIGHT };
-
-    constructor() {
-      super();
-      this.players = [cloneRollbackFighter(1, -3), cloneRollbackFighter(2, 3)];
-      this.timerFrames = 99 * 60;
-      this.winnerId = 0;
-      this.p1Sel = p1Sel;
-      this.p2Sel = p2Sel;
-      this.battleStarted = false;
-    }
-
-    tick(playerInputs) {
-      const playerCount = typeof playerInputs?.size === 'number'
-        ? playerInputs.size
-        : Object.keys(playerInputs || {}).length;
-      if (!rollbackMatched && playerCount >= 2) enterRollbackCharSelectAfterMatch();
-      if (!rollbackBattleReady) return;
-      if (!this.battleStarted) {
-        this.players = [cloneRollbackFighter(1, -3), cloneRollbackFighter(2, 3)];
-        this.timerFrames = 99 * 60;
-        this.winnerId = 0;
-        this.p1Sel = p1Sel;
-        this.p2Sel = p2Sel;
-        this.battleStarted = true;
-      }
-      if (this.winnerId) return;
-      const inputs = [
-        { left: false, right: false, jump: false, block: false, punch: false, kick: false },
-        { left: false, right: false, jump: false, block: false, punch: false, kick: false },
-      ];
-      for (const [player, input] of playerInputs.entries()) {
-        const id = player.getID();
-        if (id === 0 || id === 1) inputs[id] = readNetplayInput(input);
-      }
-      rollbackUpdateFighter(this.players[0], this.players[1], inputs[0]);
-      rollbackUpdateFighter(this.players[1], this.players[0], inputs[1]);
-      rollbackSeparate(this.players[0], this.players[1]);
-      rollbackResolveAttack(this.players[0], this.players[1]);
-      rollbackResolveAttack(this.players[1], this.players[0]);
-      this.timerFrames = Math.max(0, this.timerFrames - 1);
-      if (this.players[0].hp <= 0) this.winnerId = 2;
-      else if (this.players[1].hp <= 0) this.winnerId = 1;
-      else if (this.timerFrames <= 0) {
-        if (this.players[0].hp > this.players[1].hp) this.winnerId = 1;
-        else if (this.players[1].hp > this.players[0].hp) this.winnerId = 2;
-      }
-    }
-
-    serialize() {
-      return {
-        players: this.players.map(player => ({ ...player })),
-        timerFrames: this.timerFrames,
-        winnerId: this.winnerId,
-        p1Sel: this.p1Sel,
-        p2Sel: this.p2Sel,
-        battleStarted: this.battleStarted,
-      };
-    }
-
-    deserialize(value) {
-      this.players = value.players.map(player => ({ ...player }));
-      this.timerFrames = value.timerFrames;
-      this.winnerId = value.winnerId;
-      this.p1Sel = value.p1Sel ?? this.p1Sel;
-      this.p2Sel = value.p2Sel ?? this.p2Sel;
-      this.battleStarted = Boolean(value.battleStarted);
-    }
-
-    draw(canvas) {
-      rollbackRenderState = this.serialize();
-      if (this.battleStarted) applyRollbackRenderState(rollbackRenderState);
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-  };
-}
-
-function startRollbackWrapper() {
-  if (!window.netplayjs?.RollbackWrapper) {
-    setOnlineStatus('NetplayJS を読み込めません');
-    return;
-  }
-  try {
-    const RollbackBattleGame = createRollbackBattleGameClass();
-    rollbackWrapper = new window.netplayjs.RollbackWrapper(RollbackBattleGame);
-    rollbackWrapper.start();
-    setOnlineStatus('ROLLBACK WAITING...');
-  } catch (err) {
-    console.warn(err);
-    setOnlineStatus('ROLLBACK ERROR');
-  }
-}
-
-function waitForNetplayReady(timeoutMs = 8000) {
-  return new Promise(resolve => {
-    if (window.netplayjs?.RollbackWrapper) {
-      resolve(true);
-      return;
-    }
-    const start = performance.now();
-    const timer = setInterval(() => {
-      if (window.netplayjs?.RollbackWrapper) {
-        clearInterval(timer);
-        resolve(true);
-      } else if (performance.now() - start >= timeoutMs) {
-        clearInterval(timer);
-        resolve(false);
-      }
-    }, 100);
-  });
-}
-
-async function startRollbackBattle() {
-  if (gameState !== 'online') return;
-  resetRollbackSession();
-  currentBattleMode = 'rollback';
-  p1Wins = 0;
-  p2Wins = 0;
-  updateWinDots();
-  startBGM();
-  setOnlineStatus('ROLLBACK MATCHING...');
-  await startOnlineMatchmaking('rollback');
-}
-
-async function startRollbackGame() {
-  rollbackBattleReady = true;
-  rollbackInputMode = true;
-  currentBattleMode = 'online';
-  await startOnlineGame();
-}
-
 async function startOnlineGame() {
   if (onlineStarted) return;
   onlineStarted = true;
@@ -2611,7 +2106,7 @@ async function startOnlineGame() {
   await loadCharacters();
 }
 
-async function startOnlineMatchmaking(requestedMode = 'online') {
+async function startOnlineMatchmaking() {
   const db = getOnlineDb();
   if (!db) {
     setOnlineStatus('Firebase設定が未入力です。ONLINE_FIREBASE_CONFIG を入れてください。');
@@ -2619,10 +2114,8 @@ async function startOnlineMatchmaking(requestedMode = 'online') {
   }
 
   resetOnlineSession();
-  onlineRequestedMode = requestedMode;
-  currentBattleMode = requestedMode === 'rollback' ? 'rollback' : 'online';
-  setOnlineStatus(requestedMode === 'rollback' ? 'ROLLBACK MATCHING...' : 'MATCHING...');
-  const waitingRef = ref(db, `${ONLINE_DB_ROOT}/waiting/${requestedMode}`);
+  setOnlineStatus('MATCHING...');
+  const waitingRef = ref(db, `${ONLINE_DB_ROOT}/waiting`);
   const waitingRoomId = await claimWaitingRoom(waitingRef);
 
   if (waitingRoomId) {
@@ -2677,11 +2170,10 @@ async function createOnlineRoom(db, waitingRef) {
   await onlinePeer.setLocalDescription(offer);
   await set(onlineRoomRef, {
     status: 'waiting',
-    mode: onlineRequestedMode,
     offer: { type: offer.type, sdp: offer.sdp },
     createdAt: serverTimestamp(),
     createdAtMs: Date.now(),
-    hostSeenAt: Date.now(),
+    relay: null,
   });
   const publishedRoomId = await publishWaitingRoom(waitingRef, onlineRoomId);
   if (publishedRoomId !== onlineRoomId) {
@@ -2699,15 +2191,12 @@ async function createOnlineRoom(db, waitingRef) {
     return;
   }
   onDisconnect(onlineRoomRef).remove();
-  startOnlineHostHeartbeat();
   setOnlineStatus('WAITING FOR PLAYER...');
 
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/answer`), async snap => {
     if (!snap.exists() || onlinePeer.currentRemoteDescription) return;
-    if (onlineHeartbeatTimer) clearInterval(onlineHeartbeatTimer);
-    onlineHeartbeatTimer = null;
     await onlinePeer.setRemoteDescription(snap.val());
-    startOnlineConnectionTimeout();
+    startOnlineRelayFallback();
   });
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/guestCandidates`), snap => {
     snap.forEach(child => onlinePeer.addIceCandidate(child.val()).catch(() => {}));
@@ -2729,16 +2218,7 @@ async function joinOnlineRoom(db, roomId) {
     setOnlineStatus('別のマッチを探しています...');
     return false;
   }
-  if ((room.mode || 'online') !== onlineRequestedMode) {
-    setOnlineStatus('別のマッチを探しています...');
-    return false;
-  }
   if (room.createdAtMs && Date.now() - room.createdAtMs > ONLINE_WAITING_TTL_MS) {
-    await update(onlineRoomRef, { status: 'closed' }).catch(() => {});
-    setOnlineStatus('古いマッチをスキップしました');
-    return false;
-  }
-  if (!room.hostSeenAt || Date.now() - room.hostSeenAt > ONLINE_HOST_STALE_MS) {
     await update(onlineRoomRef, { status: 'closed' }).catch(() => {});
     setOnlineStatus('古いマッチをスキップしました');
     return false;
@@ -2757,7 +2237,7 @@ async function joinOnlineRoom(db, roomId) {
     answer: { type: answer.type, sdp: answer.sdp },
   });
   setOnlineStatus('CONNECTING...');
-  startOnlineConnectionTimeout();
+  startOnlineRelayFallback();
 
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/hostCandidates`), snap => {
     snap.forEach(child => onlinePeer.addIceCandidate(child.val()).catch(() => {}));
@@ -2775,10 +2255,9 @@ document.getElementById('online-match').addEventListener('click', () => {
   });
 });
 document.getElementById('online-back').addEventListener('click', () => {
-  onlineActionIndex = ONLINE_ACTION_IDS.length - 1;
+  onlineActionIndex = 1;
   renderOnlineActions();
   resetOnlineSession();
-  resetRollbackSession();
   playTitleConfirmSE();
   showTitleScreen();
 });
@@ -2814,7 +2293,7 @@ function renderCharSelect() {
   const p1Status = document.getElementById('cs-p1-status');
   const p2Status = document.getElementById('cs-p2-status');
   const isComMode = currentBattleMode === 'com';
-  const isOnlineMode = currentBattleMode === 'online' || isRollbackBattle();
+  const isOnlineMode = currentBattleMode === 'online';
   container.innerHTML = '';
   const p1OnTitle = p1CharFocus === 'title';
   const p2OnTitle = !isComMode && p2CharFocus === 'title';
@@ -2873,7 +2352,6 @@ function renderCharSelect() {
 function returnFromCharSelectToTitle() {
   p1Ready = false;
   p2Ready = false;
-  resetRollbackSession();
   currentBattleMode = '2p';
   charSelectLocked = false;
   p1CharFocus = 'characters';
@@ -2893,7 +2371,7 @@ function handleCharSelectKey(code) {
   if (gameState !== 'charSelect') return;
   if (charSelectLocked) return;
   const isComMode = currentBattleMode === 'com';
-  const isOnlineMode = currentBattleMode === 'online' || isRollbackBattle();
+  const isOnlineMode = currentBattleMode === 'online';
 
   if (isOnlineMode) {
     const localIsP1 = onlineLocalPlayerId === 1;
@@ -3013,7 +2491,6 @@ document.getElementById('cs-back-title').addEventListener('click', () => {
 });
 
 function checkBothReady() {
-  if (charSelectLocked) return;
   if (currentBattleMode === 'com' && p1Ready) {
     const cpuChoices = CHARACTERS.map((_, i) => i).filter(i => i !== p1Sel);
     p2Sel = cpuChoices[Math.floor(Math.random() * cpuChoices.length)];
@@ -3021,26 +2498,6 @@ function checkBothReady() {
     charSelectLocked = true;
     document.getElementById('cs-countdown').textContent = 'READY';
     setTimeout(loadCharacters, 250);
-  } else if ((isRollbackBattle() || onlineRequestedMode === 'rollback') && p1Ready && p2Ready) {
-    charSelectLocked = true;
-    document.getElementById('cs-countdown').textContent = 'READY';
-    if (onlineRole === 'host') {
-      sendOnline({ type: 'rollbackStart', p1Sel, p2Sel });
-      const db = getOnlineDb();
-      if (db && onlineRoomId) {
-        set(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/rollbackSelect/start`), {
-          p1Sel,
-          p2Sel,
-          startedAt: Date.now(),
-        }).catch(() => {});
-      }
-      setTimeout(() => {
-        startRollbackGame().catch(err => {
-          console.warn(err);
-          setOnlineStatus('ROLLBACK ERROR');
-        });
-      }, 250);
-    }
   } else if (currentBattleMode === 'online' && p1Ready && p2Ready) {
     charSelectLocked = true;
     document.getElementById('cs-countdown').textContent = 'READY';
@@ -3176,26 +2633,25 @@ function startRound() {
 
   roundIntroTimers.push(setTimeout(() => {
     el.textContent = 'FIGHT!!';
-    }, 900));
+  }, 900));
 
   roundIntroTimers.push(setTimeout(() => {
     el.style.display = 'none';
     gameState = 'playing';
-    if (isRollbackBattle()) return;
     timerInterval = setInterval(() => {
       roundTimer--;
       document.getElementById('timer-box').textContent = roundTimer;
       if (roundTimer <= 10) document.getElementById('timer-box').style.color = '#f44';
       if (roundTimer <= 0) {
         clearInterval(timerInterval);
-        if (!isOnlineGuest() || rollbackInputMode) endRound();
+        if (!isOnlineGuest()) endRound();
       }
     }, 1000);
   }, 1500));
 }
 
 function endRound(winnerId = null, fromRemote = false) {
-  if (isOnlineGuest() && !fromRemote && !rollbackInputMode) return;
+  if (isOnlineGuest() && !fromRemote) return;
   clearRoundIntroTimers();
   clearRoundEndTimers();
   clearHitStop();
@@ -3212,7 +2668,7 @@ function endRound(winnerId = null, fromRemote = false) {
   else if (roundWinner === 2) p2Wins++;
   updateWinDots();
 
-  if (isOnlineHost() && !fromRemote && !rollbackInputMode) {
+  if (isOnlineHost() && !fromRemote) {
     sendOnline({ type: 'roundEnd', winnerId: roundWinner });
   }
 
@@ -3225,7 +2681,7 @@ function endRound(winnerId = null, fromRemote = false) {
     el.style.display = 'block';
     roundEndTimers.push(setTimeout(() => {
       if (currentBattleMode === 'online') {
-        if (!rollbackInputMode || onlineRole === 'host') sendOnline({ type: 'matchEnd' });
+        sendOnline({ type: 'matchEnd' });
         resetOnlineSession();
         returnToOnlineScreen('MATCH ENDED');
         return;
@@ -3305,7 +2761,7 @@ function resolveAttack(atk, def) {
     if (def.hp <= 0) {
       clearInterval(timerInterval);
       timerInterval = null;
-      if (!isOnlineGuest() || rollbackInputMode) {
+      if (!isOnlineGuest()) {
         roundEndTimers.push(setTimeout(() => endRound(atk.id), 1300));
       }
     }
@@ -3351,13 +2807,8 @@ function animate() {
     if (hitStopTimer > 0) {
       hitStopTimer = Math.max(0, hitStopTimer - frameDt);
       accumulator = 0;
-      if (!rollbackInputMode) updateOnlineGuestRender(frameDt);
-    } else if (isRollbackBattle()) {
-      if (p1?.mixer) p1.mixer.update(frameDt);
-      if (p2?.mixer) p2.mixer.update(frameDt);
-      if (rollbackRenderState) applyRollbackRenderState(rollbackRenderState);
-      accumulator = 0;
-    } else if (isOnlineGuest() && !rollbackInputMode) {
+      updateOnlineGuestRender(frameDt);
+    } else if (isOnlineGuest()) {
       syncOnlineInput();
       updateOnlineGuestRender(frameDt);
       accumulator = 0;
