@@ -277,8 +277,12 @@
       display: none; margin-top: 18px; width: min(420px, calc(100% - 32px));
       flex-direction: column; align-items: center; gap: 10px;
     }
+    #pvp-qr-box {
+      display: none; width: 240px; height: 240px; background: #fff; padding: 10px;
+      align-items: center; justify-content: center;
+    }
     #pvp-qr-canvas {
-      display: none; width: 220px; height: 220px; background: #fff; padding: 10px;
+      display: none; width: 220px; height: 220px;
     }
     #pvp-scan-video {
       display: none; width: min(360px, 88vw); aspect-ratio: 1 / 1;
@@ -492,7 +496,7 @@
     <button id="online-back" type="button">BACK</button>
   </div>
   <div id="pvp-pair-panel">
-    <canvas id="pvp-qr-canvas" width="220" height="220"></canvas>
+    <div id="pvp-qr-box"><canvas id="pvp-qr-canvas" width="220" height="220"></canvas></div>
     <video id="pvp-scan-video" playsinline muted></video>
     <div id="pvp-room-code"></div>
   </div>
@@ -504,7 +508,7 @@
   <div class="credits-list">
     <div class="credits-row"><div class="credits-role">GAME TITLE</div><div class="credits-name">MoritaSaki in the Fight</div></div>
     <div class="credits-row"><div class="credits-role">DEVELOPMENT</div><div class="credits-name">NIDHOGG GAMES</div></div>
-    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.4.5</div></div>
+    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.4.6</div></div>
     <div class="credits-row"><div class="credits-role">PROGRAMMING</div><div class="credits-name">RIKU ISHIHARA</div></div>
     <div class="credits-row"><div class="credits-role">3D</div><div class="credits-name">RIKU ISHIHARA, YUI YAHIRO</div></div>
     <div class="credits-row"><div class="credits-role">MUSIC</div><div class="credits-name">NASUMI HEIKE</div></div>
@@ -542,7 +546,7 @@
 <div id="combo-p1"></div>
 <div id="combo-p2"></div>
 <div id="guest-controller-screen">通信中<span>HOSTの画面を見ながら操作</span></div>
-<div id="version-label">v0.4.5</div>
+<div id="version-label">v0.4.6</div>
 
 <div id="controls-guide">
   P1: [A/D] 移動 &nbsp; [W] ジャンプ &nbsp; [S] ガード &nbsp; [Q] パンチ &nbsp; [E] キック
@@ -586,7 +590,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/fireba
 import { getDatabase, ref, get, set, update, push, onValue, remove, onDisconnect, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m') || window.innerWidth <= 720;
-const ASSET_VERSION = 'v0.4.5';
+const ASSET_VERSION = 'v0.4.6';
 const GAME_WIDTH = 960;
 const GAME_HEIGHT = 720;
 const MOBILE_BAR_HEIGHT = 54;
@@ -1809,6 +1813,13 @@ let onlineActionIndex = 0;
 const ONLINE_ACTION_IDS = ['online-host', 'online-guest', 'online-back'];
 let pvpScanStream = null;
 let pvpScanTimer = null;
+const PVP_QR_SOURCES = [
+  'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js',
+  'https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
+  'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js',
+];
+const loadedExternalScripts = new Set();
 
 function renderOnlineActions() {
   ONLINE_ACTION_IDS.forEach((id, i) => {
@@ -1903,7 +1914,11 @@ function stopPvpScanner() {
 function hidePvpPairPanel() {
   stopPvpScanner();
   document.getElementById('pvp-pair-panel').style.display = 'none';
-  document.getElementById('pvp-qr-canvas').style.display = 'none';
+  const qrBox = document.getElementById('pvp-qr-box');
+  const canvas = document.getElementById('pvp-qr-canvas');
+  qrBox.style.display = 'none';
+  qrBox.replaceChildren(canvas);
+  canvas.style.display = 'none';
   document.getElementById('pvp-room-code').textContent = '';
 }
 
@@ -1926,6 +1941,64 @@ function pvpRoomFromText(text) {
   } catch (_) {
     return src;
   }
+}
+
+function loadExternalScript(src) {
+  if (loadedExternalScripts.has(src)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) {
+      existing.addEventListener('load', resolve, { once: true });
+      existing.addEventListener('error', reject, { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = () => {
+      loadedExternalScripts.add(src);
+      resolve();
+    };
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+async function ensurePvpQrLibrary() {
+  if (window.QRCode?.toCanvas || typeof window.QRCode === 'function') return true;
+  for (const src of PVP_QR_SOURCES) {
+    try {
+      await loadExternalScript(src);
+      if (window.QRCode?.toCanvas || typeof window.QRCode === 'function') return true;
+    } catch (_) {}
+  }
+  return false;
+}
+
+async function drawPvpQr(joinUrl) {
+  const qrBox = document.getElementById('pvp-qr-box');
+  const canvas = document.getElementById('pvp-qr-canvas');
+  qrBox.style.display = 'flex';
+  qrBox.replaceChildren(canvas);
+  canvas.style.display = 'none';
+  const ready = await ensurePvpQrLibrary();
+  if (!ready) return false;
+  if (window.QRCode?.toCanvas) {
+    canvas.style.display = 'block';
+    await window.QRCode.toCanvas(canvas, joinUrl, { width: 220, margin: 1 });
+    return true;
+  }
+  if (typeof window.QRCode === 'function') {
+    canvas.style.display = 'none';
+    qrBox.replaceChildren();
+    new window.QRCode(qrBox, {
+      text: joinUrl,
+      width: 220,
+      height: 220,
+      correctLevel: window.QRCode.CorrectLevel?.M,
+    });
+    return true;
+  }
+  return false;
 }
 
 function onlineConfigReady() {
@@ -2234,15 +2307,9 @@ async function startPvpHostQr() {
 
   const joinUrl = buildPvpJoinUrl(onlineRoomId);
   showPvpPairPanel();
-  const canvas = document.getElementById('pvp-qr-canvas');
-  canvas.style.display = 'block';
-  if (window.QRCode?.toCanvas) {
-    await window.QRCode.toCanvas(canvas, joinUrl, { width: 220, margin: 1 });
-  } else {
-    setOnlineStatus('QR生成ライブラリを読み込めませんでした。コードを入力してください');
-  }
+  const qrReady = await drawPvpQr(joinUrl);
   document.getElementById('pvp-room-code').textContent = onlineRoomId;
-  if (window.QRCode?.toCanvas) setOnlineStatus('GUESTにQRを読ませてください');
+  setOnlineStatus(qrReady ? 'GUESTにQRを読ませてください' : 'QR生成に失敗しました。コードを入力してください');
 
   onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/answer`), async snap => {
     if (!snap.exists() || onlinePeer.currentRemoteDescription) return;
