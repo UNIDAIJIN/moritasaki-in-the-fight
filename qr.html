@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MoritaSaki QR</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #f3f4f6;
+      color: #111827;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    main {
+      width: min(100%, 980px);
+      padding: 32px;
+    }
+    h1 {
+      margin: 0 0 24px;
+      font-size: 28px;
+      line-height: 1.1;
+      text-align: center;
+    }
+    .qr-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 24px;
+    }
+    .qr-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      padding: 22px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .qr-card h2 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.1;
+    }
+    .qr-card img {
+      width: min(100%, 360px);
+      aspect-ratio: 1;
+      image-rendering: pixelated;
+    }
+    .qr-card a {
+      max-width: 100%;
+      color: #2563eb;
+      font-size: 14px;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+    @media (max-width: 760px) {
+      main { padding: 18px; }
+      .qr-grid { grid-template-columns: 1fr; }
+    }
+    @media print {
+      body { background: #fff; }
+      main { width: 100%; padding: 12mm; }
+      .qr-card { break-inside: avoid; }
+      .qr-card a { color: #111827; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>MoritaSaki in the Fight</h1>
+    <div class="qr-grid">
+      <section class="qr-card">
+        <h2>PC</h2>
+        <img src="assets/qr/pc.png" alt="PC site QR code">
+        <a href="https://unidaijin.github.io/moritasaki-in-the-fight/">https://unidaijin.github.io/moritasaki-in-the-fight/</a>
+      </section>
+      <section class="qr-card">
+        <h2>スマホ</h2>
+        <img src="assets/qr/mobile.png" alt="Mobile site QR code">
+        <a href="https://unidaijin.github.io/moritasaki-in-the-fight/?m">https://unidaijin.github.io/moritasaki-in-the-fight/?m</a>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

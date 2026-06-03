@@ -118,6 +118,26 @@
     #loading-bar-bg { width: 320px; height: 8px; background: #222; border-radius: 4px; overflow: hidden; }
     #loading-bar { height: 100%; background: linear-gradient(90deg, #4af, #08f); width: 0%; transition: width 0.2s; border-radius: 4px; }
     #loading-text { color: #666; margin-top: 12px; font-size: 13px; }
+    #mobile-start-screen {
+      position: absolute; inset: 0; z-index: 145; display: none;
+      align-items: center; justify-content: center; flex-direction: column; gap: 18px;
+      padding: 28px; text-align: center; background: #050608; color: #fff;
+      -webkit-user-select: none; user-select: none; touch-action: manipulation;
+    }
+    #mobile-start-title {
+      font: 900 28px/1.25 Arial, Helvetica, sans-serif; letter-spacing: 2px;
+      text-shadow: 0 0 18px rgba(29,255,57,0.55);
+    }
+    #mobile-start-list {
+      display: grid; gap: 10px; color: rgba(255,255,255,0.82);
+      font: 900 16px/1.35 Arial, Helvetica, sans-serif; letter-spacing: 1px;
+    }
+    #mobile-start-tap {
+      margin-top: 8px; min-width: 220px; padding: 16px 20px;
+      border: 2px solid #1dff39; color: #d8ffd8; background: rgba(29,255,57,0.08);
+      font: 900 18px/1 Arial, Helvetica, sans-serif; letter-spacing: 2px;
+      box-shadow: 0 0 18px rgba(29,255,57,0.35), inset 0 0 12px rgba(255,255,255,0.06);
+    }
 
     /* ── Title ── */
     #title-screen {
@@ -518,6 +538,16 @@
   <div id="loading-text">読み込み中... 0%</div>
 </div>
 
+<!-- Mobile Start Prompt -->
+<div id="mobile-start-screen">
+  <div id="mobile-start-title">PLAY READY</div>
+  <div id="mobile-start-list">
+    <div>消音モードをOFFにしてください</div>
+    <div>低電力モードをOFFにしてください</div>
+  </div>
+  <button id="mobile-start-tap" type="button">PLEASE TAP HERE</button>
+</div>
+
 <!-- Title -->
 <div id="title-screen">
   <div class="title-logo">MoritaSaki<span>in the Fight</span></div>
@@ -557,7 +587,7 @@
   <div class="credits-list">
     <div class="credits-row"><div class="credits-role">GAME TITLE</div><div class="credits-name">MoritaSaki in the Fight</div></div>
     <div class="credits-row"><div class="credits-role">DEVELOPMENT</div><div class="credits-name">NIDHOGG GAMES</div></div>
-    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.6.10</div></div>
+    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.6.11</div></div>
     <div class="credits-row"><div class="credits-role">PROGRAMMING</div><div class="credits-name">RIKU ISHIHARA</div></div>
     <div class="credits-row"><div class="credits-role">3D</div><div class="credits-name">RIKU ISHIHARA, YUI YAHIRO</div></div>
     <div class="credits-row"><div class="credits-role">MUSIC</div><div class="credits-name">NASUMI HEIKE</div></div>
@@ -597,7 +627,7 @@
 <div id="guest-controller-screen">通信中<span>HOSTの画面を見ながら操作</span></div>
 <button id="victory-next" type="button" disabled>NEXT</button>
 <div id="just-guard-popup">JUST!</div>
-<div id="version-label">v0.6.10</div>
+<div id="version-label">v0.6.11</div>
 
 <div id="controls-guide">
   P1: [A/D] 移動 &nbsp; [W] ジャンプ &nbsp; [S] ガード &nbsp; [R] パンチ &nbsp; [T] キック
@@ -644,8 +674,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
 import { getDatabase, ref, get, set, update, push, onValue, onChildAdded, remove, onDisconnect, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
-const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m') || window.innerWidth <= 720;
-const ASSET_VERSION = 'v0.6.10';
+const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m');
+const ASSET_VERSION = 'v0.6.11';
 const GAME_WIDTH = 960;
 const GAME_HEIGHT = 720;
 const MOBILE_BAR_HEIGHT = 54;
@@ -1806,12 +1836,13 @@ ANIM_DEFS.forEach(({ name, path }) => {
     animLoadCount++;
     document.getElementById('loading-bar').style.width = Math.floor(animLoadCount / ANIM_DEFS.length * 100) + '%';
     document.getElementById('loading-text').textContent = `読み込み中... ${Math.floor(animLoadCount / ANIM_DEFS.length * 100)}%`;
-    if (animLoadCount >= ANIM_DEFS.length) showTitleScreen();
-  }, undefined, err => { console.warn(`Anim ${name} error:`, err); animLoadCount++; if (animLoadCount >= ANIM_DEFS.length) showTitleScreen(); });
+    if (animLoadCount >= ANIM_DEFS.length) showInitialTitleScreen();
+  }, undefined, err => { console.warn(`Anim ${name} error:`, err); animLoadCount++; if (animLoadCount >= ANIM_DEFS.length) showInitialTitleScreen(); });
 });
 
 // ─── TITLE ───────────────────────────────────────────────────
 let titleLocked = false;
+let mobileStartConfirmed = !MOBILE_RENDER_MODE;
 const TITLE_MODES = ['2P BATTLE', 'PVP BATTLE', 'COM BATTLE', 'CREDITS'];
 let titleModeIndex = 0;
 
@@ -1887,9 +1918,42 @@ function selectTitleMode() {
   playTitleConfirmSE();
 }
 
+function showInitialTitleScreen() {
+  if (MOBILE_RENDER_MODE && !mobileStartConfirmed) {
+    showMobileStartScreen();
+    return;
+  }
+  showTitleScreen();
+}
+
+function showMobileStartScreen() {
+  document.getElementById('loading-screen').style.display = 'none';
+  document.getElementById('mobile-start-screen').style.display = 'flex';
+  document.getElementById('title-screen').style.display = 'none';
+  document.getElementById('credits-screen').style.display = 'none';
+  document.getElementById('online-screen').style.display = 'none';
+  document.getElementById('char-select').style.display = 'none';
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('message').style.display = 'none';
+  hideGuestControllerScreen();
+  document.body.classList.remove('game-active');
+  document.body.classList.remove('mobile-controls-active');
+  gameState = 'mobileStart';
+}
+
+function confirmMobileStart() {
+  if (!MOBILE_RENDER_MODE || mobileStartConfirmed) return;
+  mobileStartConfirmed = true;
+  unlockSEAudioContext();
+  startBGM();
+  document.getElementById('mobile-start-screen').style.display = 'none';
+  showTitleScreen();
+}
+
 function showTitleScreen() {
   hideVictoryNext();
   document.getElementById('loading-screen').style.display = 'none';
+  document.getElementById('mobile-start-screen').style.display = 'none';
   document.getElementById('title-screen').style.display = 'flex';
   document.getElementById('credits-screen').style.display = 'none';
   document.getElementById('online-screen').style.display = 'none';
@@ -1903,6 +1967,8 @@ function showTitleScreen() {
   titleLocked = false;
   renderTitleModes();
 }
+
+document.getElementById('mobile-start-screen').addEventListener('pointerdown', confirmMobileStart);
 
 function showOnlineScreen() {
   if (gameState !== 'title' || titleLocked) return;
