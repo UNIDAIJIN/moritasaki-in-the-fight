@@ -273,6 +273,32 @@
       color: #fff;
     }
     .online-actions button:active { transform: translateY(3px); box-shadow: 0 2px 0 #000; }
+    #pvp-pair-panel {
+      display: none; margin-top: 18px; width: min(420px, calc(100% - 32px));
+      flex-direction: column; align-items: center; gap: 10px;
+    }
+    #pvp-qr-canvas {
+      display: none; width: 220px; height: 220px; background: #fff; padding: 10px;
+    }
+    #pvp-scan-video {
+      display: none; width: min(360px, 88vw); aspect-ratio: 1 / 1;
+      object-fit: cover; border: 2px solid rgba(255,255,255,0.72); background: #000;
+    }
+    #pvp-room-code {
+      color: rgba(255,255,255,0.82); font: 900 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 1px; word-break: break-all; max-width: 100%;
+    }
+    #guest-controller-screen {
+      position: absolute; inset: 0; z-index: 130; display: none;
+      align-items: center; justify-content: center; flex-direction: column;
+      background: #000; color: #d7ffd0; text-align: center;
+      font: 900 28px Arial, Helvetica, sans-serif; letter-spacing: 4px;
+      text-shadow: 0 0 16px rgba(29,255,57,0.72);
+    }
+    #guest-controller-screen span {
+      margin-top: 14px; color: rgba(255,255,255,0.58);
+      font: 900 12px Arial, Helvetica, sans-serif; letter-spacing: 2px;
+    }
 
     /* ── Character Select ── */
     #char-select {
@@ -461,8 +487,14 @@
   <div class="online-title">PVP BATTLE</div>
   <div id="online-status">READY</div>
   <div class="online-actions">
-    <button id="online-match" type="button">QUICK MATCH</button>
+    <button id="online-host" type="button">HOST QR</button>
+    <button id="online-guest" type="button">GUEST</button>
     <button id="online-back" type="button">BACK</button>
+  </div>
+  <div id="pvp-pair-panel">
+    <canvas id="pvp-qr-canvas" width="220" height="220"></canvas>
+    <video id="pvp-scan-video" playsinline muted></video>
+    <div id="pvp-room-code"></div>
   </div>
 </div>
 
@@ -472,7 +504,7 @@
   <div class="credits-list">
     <div class="credits-row"><div class="credits-role">GAME TITLE</div><div class="credits-name">MoritaSaki in the Fight</div></div>
     <div class="credits-row"><div class="credits-role">DEVELOPMENT</div><div class="credits-name">NIDHOGG GAMES</div></div>
-    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.4.4</div></div>
+    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.4.5</div></div>
     <div class="credits-row"><div class="credits-role">PROGRAMMING</div><div class="credits-name">RIKU ISHIHARA</div></div>
     <div class="credits-row"><div class="credits-role">3D</div><div class="credits-name">RIKU ISHIHARA, YUI YAHIRO</div></div>
     <div class="credits-row"><div class="credits-role">MUSIC</div><div class="credits-name">NASUMI HEIKE</div></div>
@@ -509,7 +541,8 @@
 <div id="message"></div>
 <div id="combo-p1"></div>
 <div id="combo-p2"></div>
-<div id="version-label">v0.4.4</div>
+<div id="guest-controller-screen">通信中<span>HOSTの画面を見ながら操作</span></div>
+<div id="version-label">v0.4.5</div>
 
 <div id="controls-guide">
   P1: [A/D] 移動 &nbsp; [W] ジャンプ &nbsp; [S] ガード &nbsp; [Q] パンチ &nbsp; [E] キック
@@ -542,6 +575,9 @@
 }
 </script>
 
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
 <script type="module">
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
@@ -550,7 +586,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/fireba
 import { getDatabase, ref, get, set, update, push, onValue, remove, onDisconnect, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m') || window.innerWidth <= 720;
-const ASSET_VERSION = 'v0.4.4';
+const ASSET_VERSION = 'v0.4.5';
 const GAME_WIDTH = 960;
 const GAME_HEIGHT = 720;
 const MOBILE_BAR_HEIGHT = 54;
@@ -1677,6 +1713,7 @@ function showTitleScreen() {
   document.getElementById('char-select').style.display = 'none';
   document.getElementById('hud').style.display = 'none';
   document.getElementById('message').style.display = 'none';
+  hideGuestControllerScreen();
   document.body.classList.remove('game-active');
   document.body.classList.remove('mobile-controls-active');
   gameState = 'title';
@@ -1693,11 +1730,12 @@ function showOnlineScreen() {
   document.body.classList.remove('mobile-controls-active');
   onlineActionIndex = 0;
   renderOnlineActions();
-  setOnlineStatus('QUICK MATCH を押してください');
+  hidePvpPairPanel();
+  setOnlineStatus('HOST QR または GUEST を選んでください');
   gameState = 'online';
 }
 
-function returnToOnlineScreen(statusText = 'QUICK MATCH を押してください') {
+function returnToOnlineScreen(statusText = 'HOST QR または GUEST を選んでください') {
   clearRoundIntroTimers();
   clearRoundEndTimers();
   if (timerInterval) clearInterval(timerInterval);
@@ -1707,6 +1745,7 @@ function returnToOnlineScreen(statusText = 'QUICK MATCH を押してください
   document.getElementById('char-select').style.display = 'none';
   document.getElementById('hud').style.display = 'none';
   document.getElementById('message').style.display = 'none';
+  hideGuestControllerScreen();
   document.getElementById('online-screen').style.display = 'flex';
   document.body.classList.remove('game-active');
   document.body.classList.remove('mobile-controls-active');
@@ -1717,6 +1756,7 @@ function returnToOnlineScreen(statusText = 'QUICK MATCH を押してください
   titleLocked = false;
   onlineActionIndex = 0;
   renderOnlineActions();
+  hidePvpPairPanel();
   setOnlineStatus(statusText);
 }
 
@@ -1766,7 +1806,9 @@ document.getElementById('title-screen').addEventListener('pointerdown', e => {
 });
 
 let onlineActionIndex = 0;
-const ONLINE_ACTION_IDS = ['online-match', 'online-back'];
+const ONLINE_ACTION_IDS = ['online-host', 'online-guest', 'online-back'];
+let pvpScanStream = null;
+let pvpScanTimer = null;
 
 function renderOnlineActions() {
   ONLINE_ACTION_IDS.forEach((id, i) => {
@@ -1835,6 +1877,57 @@ function setOnlineStatus(text) {
   document.getElementById('online-status').textContent = text;
 }
 
+function showGuestControllerScreen() {
+  document.getElementById('guest-controller-screen').style.display = 'flex';
+}
+
+function hideGuestControllerScreen() {
+  document.getElementById('guest-controller-screen').style.display = 'none';
+}
+
+function stopPvpScanner() {
+  if (pvpScanTimer) cancelAnimationFrame(pvpScanTimer);
+  pvpScanTimer = null;
+  if (pvpScanStream) {
+    pvpScanStream.getTracks().forEach(track => track.stop());
+    pvpScanStream = null;
+  }
+  const video = document.getElementById('pvp-scan-video');
+  if (video) {
+    video.pause();
+    video.srcObject = null;
+    video.style.display = 'none';
+  }
+}
+
+function hidePvpPairPanel() {
+  stopPvpScanner();
+  document.getElementById('pvp-pair-panel').style.display = 'none';
+  document.getElementById('pvp-qr-canvas').style.display = 'none';
+  document.getElementById('pvp-room-code').textContent = '';
+}
+
+function showPvpPairPanel() {
+  document.getElementById('pvp-pair-panel').style.display = 'flex';
+}
+
+function buildPvpJoinUrl(roomId) {
+  const url = new URL(location.href);
+  url.searchParams.set('pvp', roomId);
+  if (MOBILE_RENDER_MODE) url.searchParams.set('m', '1');
+  return url.toString();
+}
+
+function pvpRoomFromText(text) {
+  const src = text.trim();
+  if (!src) return '';
+  try {
+    return new URL(src).searchParams.get('pvp') || src;
+  } catch (_) {
+    return src;
+  }
+}
+
 function onlineConfigReady() {
   return Boolean(ONLINE_FIREBASE_CONFIG.apiKey && ONLINE_FIREBASE_CONFIG.databaseURL && ONLINE_FIREBASE_CONFIG.projectId && ONLINE_FIREBASE_CONFIG.appId);
 }
@@ -1849,6 +1942,8 @@ function getOnlineDb() {
 }
 
 function resetOnlineSession() {
+  hideGuestControllerScreen();
+  hidePvpPairPanel();
   if (onlineConnectionTimeoutTimer) clearTimeout(onlineConnectionTimeoutTimer);
   onlineConnectionTimeoutTimer = null;
   try { onlineChannel?.close(); } catch (_) {}
@@ -1960,6 +2055,8 @@ function enterOnlineCharSelect() {
   p1Ready = false;
   p2Ready = false;
   showCharSelect();
+  if (onlineRole === 'guest') showGuestControllerScreen();
+  else hideGuestControllerScreen();
   syncOnlineSelection();
 }
 
@@ -2107,6 +2204,135 @@ async function startOnlineMatchmaking() {
   }
 }
 
+async function startPvpHostQr() {
+  const db = getOnlineDb();
+  if (!db) {
+    setOnlineStatus('Firebase設定が未入力です。');
+    return;
+  }
+  resetOnlineSession();
+  currentBattleMode = 'online';
+  onlineRole = 'host';
+  onlineLocalPlayerId = 1;
+  onlineRoomRef = push(ref(db, `${ONLINE_DB_ROOT}/rooms`));
+  onlineRoomId = onlineRoomRef.key;
+  onlinePeer = createOnlinePeer();
+  wireOnlineChannel(onlinePeer.createDataChannel('input'));
+  onlinePeer.onicecandidate = e => {
+    if (e.candidate) push(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/hostCandidates`), e.candidate.toJSON());
+  };
+  const offer = await onlinePeer.createOffer();
+  await onlinePeer.setLocalDescription(offer);
+  await set(onlineRoomRef, {
+    status: 'waiting',
+    mode: 'pvp-qr',
+    offer: { type: offer.type, sdp: offer.sdp },
+    createdAt: serverTimestamp(),
+    createdAtMs: Date.now(),
+  });
+  onDisconnect(onlineRoomRef).remove();
+
+  const joinUrl = buildPvpJoinUrl(onlineRoomId);
+  showPvpPairPanel();
+  const canvas = document.getElementById('pvp-qr-canvas');
+  canvas.style.display = 'block';
+  if (window.QRCode?.toCanvas) {
+    await window.QRCode.toCanvas(canvas, joinUrl, { width: 220, margin: 1 });
+  } else {
+    setOnlineStatus('QR生成ライブラリを読み込めませんでした。コードを入力してください');
+  }
+  document.getElementById('pvp-room-code').textContent = onlineRoomId;
+  if (window.QRCode?.toCanvas) setOnlineStatus('GUESTにQRを読ませてください');
+
+  onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/answer`), async snap => {
+    if (!snap.exists() || onlinePeer.currentRemoteDescription) return;
+    await onlinePeer.setRemoteDescription(snap.val());
+    startOnlineConnectionTimeout();
+  });
+  onValue(ref(db, `${ONLINE_DB_ROOT}/rooms/${onlineRoomId}/guestCandidates`), snap => {
+    snap.forEach(child => onlinePeer.addIceCandidate(child.val()).catch(() => {}));
+  });
+}
+
+async function startPvpGuestJoin(roomId) {
+  const db = getOnlineDb();
+  if (!db) {
+    setOnlineStatus('Firebase設定が未入力です。');
+    return;
+  }
+  const targetRoomId = pvpRoomFromText(roomId);
+  if (!targetRoomId) {
+    setOnlineStatus('QRを読み込めませんでした');
+    return;
+  }
+  resetOnlineSession();
+  currentBattleMode = 'online';
+  const joined = await joinOnlineRoom(db, targetRoomId);
+  if (!joined) {
+    setOnlineStatus('接続できませんでした');
+  }
+}
+
+async function startPvpGuestScanner() {
+  resetOnlineSession();
+  showPvpPairPanel();
+  const existingRoom = new URLSearchParams(location.search).get('pvp');
+  if (existingRoom) {
+    await startPvpGuestJoin(existingRoom);
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    const manual = prompt('HOSTの画面に出ているコードを入力してください');
+    if (manual) await startPvpGuestJoin(manual);
+    else {
+      hidePvpPairPanel();
+      setOnlineStatus('HOST QR または GUEST を選んでください');
+    }
+    return;
+  }
+  const video = document.getElementById('pvp-scan-video');
+  const detector = 'BarcodeDetector' in window ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
+  if (!detector && !window.jsQR) {
+    const manual = prompt('HOSTの画面に出ているコードを入力してください');
+    if (manual) await startPvpGuestJoin(manual);
+    else {
+      hidePvpPairPanel();
+      setOnlineStatus('HOST QR または GUEST を選んでください');
+    }
+    return;
+  }
+  const scanCanvas = document.createElement('canvas');
+  const scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
+  pvpScanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+  video.srcObject = pvpScanStream;
+  video.style.display = 'block';
+  await video.play();
+  setOnlineStatus('HOSTのQRを読み込んでください');
+  const scan = async () => {
+    try {
+      let rawValue = '';
+      if (detector) {
+        const codes = await detector.detect(video);
+        rawValue = codes[0]?.rawValue || '';
+      } else if (window.jsQR && video.videoWidth > 0 && video.videoHeight > 0) {
+        scanCanvas.width = video.videoWidth;
+        scanCanvas.height = video.videoHeight;
+        scanCtx.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
+        const imageData = scanCtx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
+        rawValue = window.jsQR(imageData.data, imageData.width, imageData.height)?.data || '';
+      }
+      if (rawValue) {
+        const roomId = pvpRoomFromText(rawValue);
+        stopPvpScanner();
+        await startPvpGuestJoin(roomId);
+        return;
+      }
+    } catch (_) {}
+    pvpScanTimer = requestAnimationFrame(scan);
+  };
+  scan();
+}
+
 async function claimWaitingRoom(waitingRef) {
   let claimedRoomId = null;
   await runTransaction(waitingRef, current => {
@@ -2225,17 +2451,26 @@ async function joinOnlineRoom(db, roomId) {
   return true;
 }
 
-document.getElementById('online-match').addEventListener('click', () => {
+document.getElementById('online-host').addEventListener('click', () => {
   onlineActionIndex = 0;
   renderOnlineActions();
   startBGM();
-  startOnlineMatchmaking().catch(err => {
+  startPvpHostQr().catch(err => {
     console.warn(err);
-    setOnlineStatus('ONLINE ERROR');
+    setOnlineStatus('HOST ERROR');
+  });
+});
+document.getElementById('online-guest').addEventListener('click', () => {
+  onlineActionIndex = 1;
+  renderOnlineActions();
+  startBGM();
+  startPvpGuestScanner().catch(err => {
+    console.warn(err);
+    setOnlineStatus('GUEST ERROR');
   });
 });
 document.getElementById('online-back').addEventListener('click', () => {
-  onlineActionIndex = 1;
+  onlineActionIndex = ONLINE_ACTION_IDS.length - 1;
   renderOnlineActions();
   resetOnlineSession();
   playTitleConfirmSE();
