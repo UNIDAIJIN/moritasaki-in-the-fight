@@ -514,7 +514,7 @@
   <div class="credits-list">
     <div class="credits-row"><div class="credits-role">GAME TITLE</div><div class="credits-name">MoritaSaki in the Fight</div></div>
     <div class="credits-row"><div class="credits-role">DEVELOPMENT</div><div class="credits-name">NIDHOGG GAMES</div></div>
-    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.5.1</div></div>
+    <div class="credits-row"><div class="credits-role">VERSION</div><div class="credits-name">v0.5.2</div></div>
     <div class="credits-row"><div class="credits-role">PROGRAMMING</div><div class="credits-name">RIKU ISHIHARA</div></div>
     <div class="credits-row"><div class="credits-role">3D</div><div class="credits-name">RIKU ISHIHARA, YUI YAHIRO</div></div>
     <div class="credits-row"><div class="credits-role">MUSIC</div><div class="credits-name">NASUMI HEIKE</div></div>
@@ -552,7 +552,7 @@
 <div id="combo-p1"></div>
 <div id="combo-p2"></div>
 <div id="guest-controller-screen">通信中<span>HOSTの画面を見ながら操作</span></div>
-<div id="version-label">v0.5.1</div>
+<div id="version-label">v0.5.2</div>
 
 <div id="controls-guide">
   P1: [A/D] 移動 &nbsp; [W] ジャンプ &nbsp; [S] ガード &nbsp; [Q] パンチ &nbsp; [E] キック
@@ -596,7 +596,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/fireba
 import { getDatabase, ref, get, set, update, push, onValue, onChildAdded, remove, onDisconnect, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const MOBILE_RENDER_MODE = new URLSearchParams(location.search).has('m') || window.innerWidth <= 720;
-const ASSET_VERSION = 'v0.5.1';
+const ASSET_VERSION = 'v0.5.2';
 const GAME_WIDTH = 960;
 const GAME_HEIGHT = 720;
 const MOBILE_BAR_HEIGHT = 54;
@@ -959,7 +959,7 @@ function pressGameKey(code) {
   if (handleCreditsKey(code)) return;
   if (handleTitleKey(code)) return;
   if (handleOnlineKey(code)) return;
-  if (!keys.has(code) && !MOBILE_RENDER_MODE) {
+  if (!keys.has(code)) {
     handleCharSelectKey(code);
   }
   keys.add(code);
@@ -1030,7 +1030,6 @@ function setupMobileController() {
       }
       btn.classList.add('pressed');
       vibrate(12);
-      handleCharSelectKey(code);
       setButtonKey(code, true);
     };
     const release = e => {
