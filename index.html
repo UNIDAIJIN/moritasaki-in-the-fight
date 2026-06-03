@@ -1599,7 +1599,11 @@ const TITLE_MODES = ['2P BATTLE', 'ONLINE BATTLE', 'COM BATTLE', 'CREDITS'];
 let titleModeIndex = 0;
 
 function getVisibleTitleModes() {
-  return MOBILE_RENDER_MODE ? TITLE_MODES.filter(mode => mode !== '2P BATTLE') : TITLE_MODES;
+  return TITLE_MODES.filter(mode => {
+    if (MOBILE_RENDER_MODE && mode === '2P BATTLE') return false;
+    if (!MOBILE_RENDER_MODE && mode === 'ONLINE BATTLE') return false;
+    return true;
+  });
 }
 
 function renderTitleModes() {
