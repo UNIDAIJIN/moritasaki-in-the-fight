@@ -1000,28 +1000,28 @@ const CHARACTERS = [
   {
     name: 'RIKU', path: 'chara_glb/riku.glb', texDir: 'chara_glb/tex/riku', texCount: 2,
     winAnim: 'anim/RikuWin',
-    color: '#4af', bg: '#0a1a2e', scale: 1.0, voice: 'voice/riku_voice.mp3', deadVoice: 'voice/riku_dead.mp3',
+    color: '#4af', bg: '#0a1a2e', scale: 1.0, voice: 'voice/riku_voice.mp3', deadVoice: 'voice/riku_dead.mp3', winVoice: 'voice/rikuwin.mp3',
     stats: DEFAULT_STATS,
     moves: defaultMoves(),
   },
   {
     name: 'NINO', path: 'chara_glb/nino.glb', texDir: 'chara_glb/tex/nino', texCount: 3, texMap: [1,0,2,2], yAdjust: -0.05,
     winAnim: 'anim/NinoWin.fbx',
-    color: '#f84', bg: '#2e1a0a', scale: 1.05, voice: 'voice/nino_voice.mp3', deadVoice: 'voice/nino_dead.mp3',
+    color: '#f84', bg: '#2e1a0a', scale: 1.05, voice: 'voice/nino_voice.mp3', deadVoice: 'voice/nino_dead.mp3', winVoice: 'voice/ninowin.mp3',
     stats: DEFAULT_STATS,
     moves: defaultMoves(),
   },
   {
     name: 'MAKI', path: 'chara_glb/maki.glb', texDir: 'chara_glb/tex/maki', texCount: 3,
     winAnim: 'anim/MakiWin',
-    color: '#4f8', bg: '#0a2e1a', scale: 0.95, voice: 'voice/maki_voice.mp3', deadVoice: 'voice/maki_dead.mp3',
+    color: '#4f8', bg: '#0a2e1a', scale: 0.95, voice: 'voice/maki_voice.mp3', deadVoice: 'voice/maki_dead.mp3', winVoice: 'voice/makiwin.mp3',
     stats: DEFAULT_STATS,
     moves: defaultMoves(),
   },
   {
     name: 'NATSUMI', path: 'chara_glb/natsumi.glb', texDir: 'chara_glb/tex/natsumi', texCount: 2, texMap: [1,0],
     winAnim: 'anim/NatsumiWin',
-    color: '#f4f', bg: '#2e0a2e', scale: 0.95, voice: 'voice/natsumi_voice.mp3', deadVoice: 'voice/natsumi_dead.mp3',
+    color: '#f4f', bg: '#2e0a2e', scale: 0.95, voice: 'voice/natsumi_voice.mp3', deadVoice: 'voice/natsumi_dead.mp3', winVoice: 'voice/natsumiwin.mp3',
     stats: DEFAULT_STATS,
     moves: defaultMoves(),
   },
@@ -1694,6 +1694,11 @@ function playTitleConfirmSE() {
   playTitleSE(titleConfirmSE);
 }
 
+function playRoundIntroVoice(roundNo) {
+  const introFile = roundNo <= 5 ? `round${roundNo}.mp3` : 'ready.mp3';
+  playSE(`voice/${introFile}`);
+}
+
 // ─── GAME STATE ───────────────────────────────────────────────
 let gameState = 'loading';
 let roundTimer = 99, timerInterval = null;
@@ -1701,6 +1706,7 @@ let roundIntroTimers = [];
 let roundEndTimers = [];
 let p1, p2;
 let p1Wins = 0, p2Wins = 0;
+let currentRound = 1;
 let victoryWinnerId = null;
 let victoryNextReady = false;
 const WINS_TO_WIN = 2;
@@ -2564,6 +2570,7 @@ function syncOnlineState(dt) {
     p1: packPlayerState(p1),
     p2: packPlayerState(p2),
     roundTimer,
+    currentRound,
     p1Wins,
     p2Wins,
   });
@@ -2586,6 +2593,7 @@ function applyOnlineState(msg) {
     document.getElementById('timer-box').textContent = roundTimer;
     if (roundTimer <= 10) document.getElementById('timer-box').style.color = '#f44';
   }
+  if (typeof msg.currentRound === 'number') currentRound = msg.currentRound;
   if (typeof msg.p1Wins === 'number') p1Wins = msg.p1Wins;
   if (typeof msg.p2Wins === 'number') p2Wins = msg.p2Wins;
   updateWinDots();
@@ -2628,6 +2636,10 @@ async function startPvpHostQr() {
     return;
   }
   resetOnlineSession();
+  if (!(await onlineRoomCapacityAvailable(db))) {
+    setOnlineStatus('部屋が満席です');
+    return;
+  }
   currentBattleMode = 'online';
   onlineRole = 'host';
   onlineLocalPlayerId = 1;
@@ -3318,6 +3330,7 @@ function initGame(model1, model2) {
   comBrain.jumpCooldown = 0;
   comBrain.decisionTimer = 0;
   comBrain.desiredRange = 1.55;
+  currentRound = 1;
 
   // 前のプレイヤーのモデルをシーンから削除
   if (p1?.model) scene.remove(p1.model);
@@ -3351,12 +3364,14 @@ function startRound() {
   gameState = 'roundIntro';
 
   const el = document.getElementById('message');
-  const roundNo = p1Wins + p2Wins + 1;
+  const roundNo = currentRound;
   el.textContent = `ROUND ${roundNo}`;
   el.style.display = 'block';
+  playRoundIntroVoice(roundNo);
 
   roundIntroTimers.push(setTimeout(() => {
     el.textContent = 'FIGHT!!';
+    playSE('voice/fight.mp3');
   }, 900));
 
   roundIntroTimers.push(setTimeout(() => {
@@ -3409,6 +3424,7 @@ function endRound(winnerId = null, fromRemote = false) {
       el.style.display = 'none';
       // 次のラウンドへ（HPリセット・位置リセット）
       p1.reset(-3); p2.reset(3);
+      currentRound++;
       gameState = 'playing';
       startRound();
     }, 2500));
@@ -3430,8 +3446,10 @@ function showVictory(winnerId) {
   victoryNextReady = false;
   gameState = 'victory';
   const winner = winnerId === 1 ? p1 : p2;
-  const winnerName = winnerId === 1 ? CHARACTERS[p1Sel].name : CHARACTERS[p2Sel].name;
+  const winnerCharacter = CHARACTERS[winnerId === 1 ? p1Sel : p2Sel];
+  const winnerName = winnerCharacter.name;
   const loser = winnerId === 1 ? p2 : p1;
+  playSE(winnerCharacter.winVoice);
   if (winner) {
     winner.state = 'win';
     winner.stateTime = 9999;
